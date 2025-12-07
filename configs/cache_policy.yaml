@@ -1,0 +1,39 @@
+# ArcticRoute cache cleaner default production policy
+# 说明：
+# - keep-months: 近 K 个月总是保留（可替代“latest”语义）
+# - max-size-gb: 允许的最大缓存占用（超过则按优先级清理）
+# - protect: 额外强制保留的月份（字符串 YYYYMM），例如历史关键时间点
+# - types: 限定清理类型，常用值：blocks、snapshot、merged、cost、outputs(=summary)、reports
+# - use-trash: 安全删除，移动到 .trash 下，便于回滚
+# - stabilize-seconds / retry-open: 读取句柄防护（与 snapshot 判稳一致）
+#
+# 注意：命令行显式参数优先于本 YAML。
+
+keep-months: 6
+max-size-gb: 60
+protect:
+  - "202412"
+types:
+  - blocks
+  - snapshot
+  - outputs
+use-trash: true
+stabilize-seconds: 4
+retry-open: 3
+trash-ttl-days: 7
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

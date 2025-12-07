@@ -1,0 +1,24 @@
+[Unit]
+Description=ArcticRoute NRT pull and fuse
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%E/ArcticRoute
+# Environment file path can be overridden by drop-in
+EnvironmentFile=-/etc/arcticroute/env
+# Fallback to project .env if mounted
+EnvironmentFile=-/app/.env
+ExecStart=/usr/bin/python -m ArcticRoute.api.cli health.check --out ArcticRoute/reports/health/health_$(/bin/date +%%Y%%m%%d).json
+ExecStart=/usr/bin/python -m ArcticRoute.api.cli ingest.nrt.pull --ym current --what ice,wave --since -P1D
+ExecStart=/usr/bin/python -m ArcticRoute.api.cli risk.fuse --ym current --method stacking
+ExecStart=/usr/bin/python -m ArcticRoute.api.cli report.build --ym current --include calibration
+
+# Ensure non-root image user can write to mounted volumes
+User=10001
+Group=10001
+
+[Install]
+WantedBy=multi-user.target
+

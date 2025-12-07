@@ -1,0 +1,241 @@
+{
+  "version": 1,
+  "artifacts": [
+    {
+      "run_id": "20251106T091745",
+      "kind": "risk_grid",
+      "path": "ArcticRoute/data_processed/ice_forecast/merged/ice_cost_202412.nc",
+      "attrs": {
+        "month": "202412",
+        "note": "dummy"
+      },
+      "ts": "20251106T091745"
+    },
+    {
+      "run_id": "20251106T034610",
+      "kind": "features_summary",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\reports\\recon\\features_summary.json",
+      "attrs": {},
+      "ts": "20251106T115418"
+    },
+    {
+      "run_id": "20251106T140816",
+      "kind": "risk_fuse_prep",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\reports\\d_stage\\D_PREP_STATUS_202412.json",
+      "attrs": {
+        "ym": "202412",
+        "write_config": 1
+      },
+      "ts": "20251106T140816"
+    },
+    {
+      "run_id": "prior_all_20251108T084229",
+      "kind": "prior_ckpt",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\reports\\phaseE\\train_logs\\prior_all_20251108T084229\\best.ckpt",
+      "attrs": {
+        "ym": "all",
+        "recall@5": 7.41839762611276e-05,
+        "epoch": 0
+      },
+      "ts": "20251108T092954"
+    },
+    {
+      "run_id": "prior_all_20251109T154648",
+      "kind": "prior_ckpt",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\reports\\phaseE\\train_logs\\prior_all_20251109T154648\\best.ckpt",
+      "attrs": {
+        "ym": "all",
+        "recall@5": 0.05951038575667656,
+        "epoch": 0
+      },
+      "ts": "20251109T164757"
+    },
+    {
+      "run_id": "20251110T125405",
+      "kind": "risk_accident",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\data_processed\\risk\\risk_accident_202412.nc",
+      "attrs": {
+        "ym": "202412",
+        "src": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\data_raw\\incidents\\2021.1.1-2025.10.29.csv"
+      },
+      "ts": "20251110T125405"
+    },
+    {
+      "run_id": "last",
+      "kind": "prior_embeddings",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\data_processed\\ais\\embeddings_all.parquet",
+      "attrs": {
+        "ym": "all",
+        "segments": 148974,
+        "exported": 148974,
+        "mean_norm": 14.780586242675781,
+        "mean_val": 0.001001762575469911
+      },
+      "ts": "20251111T102656"
+    },
+    {
+      "run_id": "all",
+      "kind": "prior_cluster_assign",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\data_processed\\ais\\cluster_assign_all.parquet",
+      "attrs": {
+        "ym": "all"
+      },
+      "ts": "20251111T225452"
+    },
+    {
+      "run_id": "all",
+      "kind": "prior_cluster_scan",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\reports\\phaseE\\cluster\\scan_report_all.json",
+      "attrs": {
+        "ym": "all"
+      },
+      "ts": "20251111T225452"
+    },
+    {
+      "run_id": "all",
+      "kind": "prior_centerlines",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\reports\\phaseE\\center\\prior_centerlines_all.geojson",
+      "attrs": {
+        "ym": "all",
+        "clusters": 32
+      },
+      "ts": "20251112T103451"
+    },
+    {
+      "run_id": "all",
+      "kind": "prior_raster",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\ArcticRoute\\data_processed\\prior\\prior_transformer_all.nc",
+      "attrs": {
+        "ym": "all",
+        "method": "transformer"
+      },
+      "ts": "20251112T113325"
+    },
+    {
+      "run_id": "all",
+      "kind": "prior_eval_json",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\reports\\phaseE\\prior_metrics_all.json",
+      "attrs": {
+        "ym": "all",
+        "tau": 0.5
+      },
+      "ts": "20251112T120455"
+    },
+    {
+      "run_id": "all",
+      "kind": "prior_eval_html",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\reports\\phaseE\\prior_summary_all.html",
+      "attrs": {
+        "ym": "all",
+        "tau": 0.5
+      },
+      "ts": "20251112T120455"
+    },
+    {
+      "run_id": "202412",
+      "kind": "prior_raster",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\ArcticRoute\\data_processed\\prior\\prior_transformer_202412.nc",
+      "attrs": {
+        "ym": "202412",
+        "method": "transformer"
+      },
+      "ts": "20251117T104905"
+    },
+    {
+      "run_id": "20251112T135628",
+      "kind": "nrt_pull",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\logs\\ingest_nrt_20251112T135628.meta.json",
+      "attrs": {
+        "ym": "202412",
+        "since": "2024-12-01/2024-12-31"
+      },
+      "ts": "20251112T135629"
+    },
+    {
+      "run_id": "20251112T143142",
+      "kind": "nrt_pull",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\logs\\ingest_nrt_20251112T143142.meta.json",
+      "attrs": {
+        "ym": "202412",
+        "since": null
+      },
+      "ts": "20251112T143143"
+    },
+    {
+      "run_id": "20251112T143453",
+      "kind": "nrt_pull",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\logs\\ingest_nrt_20251112T143453.meta.json",
+      "attrs": {
+        "ym": "202412",
+        "since": null
+      },
+      "ts": "20251112T143454"
+    },
+    {
+      "run_id": "20251112T220032",
+      "kind": "risk_ice",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\data_processed\\risk\\risk_ice_202412.nc",
+      "attrs": {
+        "ym": "202412"
+      },
+      "ts": "20251112T220032"
+    },
+    {
+      "run_id": "20251114T145955",
+      "kind": "risk_accident",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\data_processed\\risk\\risk_accident_202412.nc",
+      "attrs": {
+        "ym": "202412",
+        "src": "C:\\Users\\sgddsf\\Desktop\\minimum\\outputs\\acc_hotspots.geojson"
+      },
+      "ts": "20251114T145955"
+    },
+    {
+      "run_id": "20251114T150037",
+      "kind": "risk_ice",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\data_processed\\risk\\risk_ice_202412.nc",
+      "attrs": {
+        "ym": "202412"
+      },
+      "ts": "20251114T150037"
+    },
+    {
+      "run_id": "20251116T155008",
+      "kind": "risk_ice",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\data_processed\\risk\\risk_ice_202412.nc",
+      "attrs": {
+        "ym": "202412"
+      },
+      "ts": "20251116T155008"
+    },
+    {
+      "run_id": "20251116T155009",
+      "kind": "risk_accident",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\data_processed\\risk\\risk_accident_202412.nc",
+      "attrs": {
+        "ym": "202412",
+        "src": "C:\\Users\\sgddsf\\Desktop\\minimum\\outputs\\incidents_Q4_2024.geojson"
+      },
+      "ts": "20251116T155009"
+    },
+    {
+      "run_id": "20251116T155021",
+      "kind": "risk_ice",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\data_processed\\risk\\risk_ice_202412.nc",
+      "attrs": {
+        "ym": "202412"
+      },
+      "ts": "20251116T155021"
+    },
+    {
+      "run_id": "20251116T155022",
+      "kind": "risk_accident",
+      "path": "C:\\Users\\sgddsf\\Desktop\\minimum\\ArcticRoute\\data_processed\\risk\\risk_accident_202412.nc",
+      "attrs": {
+        "ym": "202412",
+        "src": "C:\\Users\\sgddsf\\Desktop\\minimum\\outputs\\incidents_Q4_2024.geojson"
+      },
+      "ts": "20251116T155022"
+    }
+  ]
+}

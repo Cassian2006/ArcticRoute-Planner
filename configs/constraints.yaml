@@ -1,0 +1,6 @@
+constraints:
+  min_clearance_km_default: 3
+  coast_buffer_km: 1
+  ice_edge_source: ArcticRoute/data_processed/features/edge_{ym}.nc
+  mpa_geojson: ArcticRoute/data_processed/env/mpa.geojson
+  soft_penalty_weight: 1.0

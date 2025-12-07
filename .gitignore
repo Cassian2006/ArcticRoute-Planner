@@ -1,0 +1,57 @@
+# Large data and generated datasets
+ArcticRoute/newDATA_RAW/
+ArcticRoute/diagnostics/
+ArcticRoute/data/
+ArcticRoute/data_processed/
+ArcticRoute/reports/
+ArcticRoute/ArcticRoute/data_raw/
+ArcticRoute/ArcticRoute/data_processed/
+legacy/data_processed/
+legacy/reports/
+data/
+!data/samples/
+!data/samples/**
+data_processed/
+data_raw/
+outputs/
+logs/
+.cache/
+*.csv
+*.nc
+*.tif
+*.grib
+
+# Virtual environments
+.venv/
+venv/
+
+# Byte-compiled / cache
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+**/.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+
+# Environment files
+.env
+.env.local
+
+# Build artefacts
+build/
+dist/
+*.egg-info/
+
+# Streamlit
+.streamlit/
+.ui_state.json
+
+# Logs
+*.log
+
+# Misc
+.DS_Store
+Thumbs.db

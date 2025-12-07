@@ -1,0 +1,11 @@
+{
+  "purpose": "Phase F: 生成交互风险层 R_interact_<ym>.nc 的占位实现（REUSE stub）",
+  "interfaces": {
+    "build_interact_layer(ym)": "返回 xarray.DataArray[name='risk']，写盘至 data_processed/risk/R_interact_<ym>.nc"
+  },
+  "notes": [
+    "当前实现为全零层，仅为打通 CLI/融合/UI 流程，后续替换为 DCPA/TCPA/动态船域计算",
+    "REUSE: 网格尺寸推断复用至 escort 兜底"
+  ],
+  "rollback": "直接删除该文件与生成的 R_interact_*.nc 即可；融合中 interact_weight=0（默认）即不生效"
+}

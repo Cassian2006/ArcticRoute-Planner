@@ -1,0 +1,72 @@
+version: "3.9"
+
+services:
+  # Streamlit 最小 UI（沿用现有镜像与命令）
+  ui:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: arcticroute:latest
+    container_name: arcticroute-ui
+    command: ["python", "-m", "ArcticRoute.api.cli", "serve", "--ui", "--port", "8501"]
+    expose:
+      - "8501"
+    env_file:
+      - ../.env
+    environment:
+      - ARCTICROUTE_ROOT=/app
+      - PYTHONPATH=/app
+      - ARCTICROUTE_DATA=/data
+    volumes:
+      # 共享产物/报告目录（供 UI/只读服务访问）
+      - ../ArcticRoute/outputs:/app/ArcticRoute/outputs
+      - ../ArcticRoute/reports:/app/ArcticRoute/reports
+      - ../ArcticRoute/data_processed:/app/ArcticRoute/data_processed
+      - arctic_data:/data
+    restart: unless-stopped
+
+  # 轻量运维容器：进入后可直接运行 CLI
+  ops:
+    image: arcticroute:latest
+    container_name: arcticroute-ops
+    entrypoint: ["sleep", "infinity"]
+    env_file:
+      - ../.env
+    environment:
+      - ARCTICROUTE_ROOT=/app
+      - PYTHONPATH=/app
+      - ARCTICROUTE_DATA=/data
+    volumes:
+      - ../ArcticRoute/outputs:/app/ArcticRoute/outputs
+      - ../ArcticRoute/reports:/app/ArcticRoute/reports
+      - ../ArcticRoute/data_processed:/app/ArcticRoute/data_processed
+      - arctic_data:/data
+    restart: unless-stopped
+
+  # 静态只读资源服务（用于前端直接访问报告/图层）
+  static:
+    image: nginx:1.27-alpine
+    container_name: ar-static
+    expose:
+      - "80"
+    volumes:
+      - ../ArcticRoute/reports:/usr/share/nginx/html/reports:ro
+      - ../ArcticRoute/data_processed:/usr/share/nginx/html/data_processed:ro
+    restart: unless-stopped
+
+  # 统一网关（合并 Streamlit UI 与静态资源）
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: ar-gateway
+    depends_on:
+      - ui
+      - static
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/gateway.conf:/etc/nginx/nginx.conf:ro
+    restart: unless-stopped
+
+volumes:
+  arctic_data:
+    driver: local

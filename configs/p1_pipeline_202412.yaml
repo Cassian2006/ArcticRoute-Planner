@@ -1,0 +1,33 @@
+ym: '202412'
+run_id: 20251105T203543
+base_dir: C:\Users\sgddsf\Desktop\minimum\ArcticRoute\data_processed\ice_forecast
+base_merged: C:\Users\sgddsf\Desktop\minimum\ArcticRoute\data_processed\ice_forecast\merged
+t0: 0.1
+t1: 0.75
+gamma: 1.5
+alpha: 0.6
+warn_nan_pct: 30.0
+warn_sic_max: 1.2
+warn_cost_max: 0.3
+route: true
+time_index: 2
+start_ij:
+- 200
+- 150
+goal_ij:
+- 320
+- 480
+start_latlon: null
+goal_latlon: null
+no_diagonal: false
+geojson: null
+if_newer: false
+dry_run: false
+summary_file: C:\Users\sgddsf\Desktop\minimum\outputs\summary_202412.json
+cost_file: C:\Users\sgddsf\Desktop\minimum\ArcticRoute\data_processed\ice_forecast\merged\ice_cost_202412.nc
+sic_file: C:\Users\sgddsf\Desktop\minimum\ArcticRoute\data_processed\ice_forecast\merged\sic_fcst_202412.nc
+git: {}
+env:
+  python: 3.11.9
+  executable: C:\Users\sgddsf\AppData\Local\Programs\Python\Python311\python.exe
+  platform: Windows-10-10.0.26100-SP0

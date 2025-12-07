@@ -1,0 +1,41 @@
+# Real-Data & Method Audit configuration
+# 若存在其他配置文件位置，加载器会优先合并该文件与内置默认值。
+allow_roots:
+  - ArcticRoute/data_processed/ais
+  - ArcticRoute/data_processed/risk
+  - ArcticRoute/data_processed/prior
+  - ArcticRoute/reports
+  - data_processed
+  - reports
+
+deny_name_substrings: ["mock", "demo", "sample", "toy", "synthetic"]
+
+require_method: "unetformer"
+
+min_size_bytes:
+  parquet_tracks: 50000000   # 50MB
+  risk_nc: 5000000           # 5MB
+  prior_nc: 2000000          # 2MB
+
+sanity_thresholds:
+  risk_nonzero_pct: [0.02, 0.95]
+  prior_penalty_std_min: 0.02
+  interact_corr_min: 0.10
+
+profiles:
+  real.quick:
+    months: ["202412"]
+    scenarios: ["nsr_wbound"]
+    require_real: true
+    overrides:
+      allow_roots:
+        - ArcticRoute/data_processed/ais
+        - ArcticRoute/data_processed/risk
+        - ArcticRoute/data_processed/prior
+        - ArcticRoute/reports/d_stage/phaseG
+        - ArcticRoute/reports/d_stage/phaseI
+        - data_processed
+  real.full:
+    months: ["202411","202412","202501"]
+    scenarios: ["nsr_wbound","nwp_eastbound"]
+    require_real: true
