@@ -1,0 +1,29 @@
+{
+  "scenario": "barents_to_chukchi",
+  "mode": "efficient",
+  "reachable": true,
+  "distance_km": 4326.700952896922,
+  "total_cost": 54.0,
+  "edl_risk_cost": null,
+  "edl_unc_cost": null,
+  "ice_cost": null,
+  "wave_cost": null,
+  "ice_class_soft_cost": null,
+  "ice_class_hard_cost": null,
+  "meta": {
+    "ym": "202412",
+    "use_real_data": false,
+    "cost_mode": "demo_icebelt",
+    "fallback_reason": null,
+    "vessel_profile": "panamax",
+    "edl_backend": "miles",
+    "grid_shape": [
+      40,
+      80
+    ],
+    "w_edl": 0.3,
+    "use_edl_uncertainty": false,
+    "edl_uncertainty_weight": 0.0,
+    "ice_penalty": 4.0
+  }
+}

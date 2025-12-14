@@ -1,0 +1,28 @@
+schema:
+  feature_columns:
+    - lat
+    - lon
+    - month
+    - sic
+    - wave_swh
+    - ice_thickness
+    - ais_density
+    - vessel_dwt
+    - vessel_max_ice_thickness
+  target_column: label
+  sample_weight_column: null
+
+sampling:
+  # 每个场景最多采样多少正样本 / 负样本
+  max_positive_per_scenario: 20000
+  max_negative_per_scenario: 20000
+  ais_density_threshold: 0.05   # 归一化 AIS 密度，> 0.05 视为“主航道”
+  ocean_mask_min_fraction: 0.7 # patch 内海洋格点比例
+
+grid:
+  mode: auto   # "auto" 按场景 grid_mode 选择 demo/real
+  ym: 202412
+
+output:
+  dir: data_real/edl/training
+  filename_pattern: edl_dataset_{scenario_id}.parquet

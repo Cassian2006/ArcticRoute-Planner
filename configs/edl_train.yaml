@@ -1,0 +1,28 @@
+data:
+  parquet_glob: "data_real/edl/training/edl_dataset_*.parquet"
+  train_fraction: 0.8
+  random_seed: 42
+  target_column: "label"
+  feature_columns:
+    - sic
+    - wave_swh
+    - ais_density
+    - vessel_dwt
+    - vessel_max_ice_thickness
+    # optional: ice_thickness
+
+model:
+  hidden_sizes: [64, 64]
+  dropout: 0.1
+
+train:
+  batch_size: 512
+  num_epochs: 5
+  learning_rate: 1e-3
+  weight_decay: 1e-4
+  device: "cpu"
+
+output:
+  model_dir: "data_real/edl/models"
+  model_name: "edl_torch_demo.pt"
+  report_path: "data_real/edl/reports/edl_train_report.json"

@@ -1,0 +1,114 @@
+scenarios:
+  barents_to_chukchi_edl:
+    title: "Barents to Chukchi (EDL-Safe)"
+    description: "Long stretch along Russia north coast; contrast EDL-Safe vs Robust."
+    start_lat: 70.8
+    start_lon: 33.0
+    end_lat: 70.5
+    end_lon: 170.0
+    ym: "202412"
+    grid_mode: "real"
+    base_profile: "edl_safe"
+    vessel: "ice_class"
+    w_ice: 4.0
+    w_wave: 2.0
+    w_ais: 4.0
+    w_ais_corridor: 4.0
+    w_ais_congestion: 1.6
+    use_edl: true
+    use_edl_uncertainty: false
+
+  kara_short_efficient:
+    title: "Kara Inland Short Hop (Efficient)"
+    description: "Medium-scale hop inside Kara Sea; tests AIS density and ice constraints."
+    start_lat: 74.0
+    start_lon: 60.0
+    end_lat: 76.0
+    end_lon: 90.0
+    ym: "202412"
+    grid_mode: "real"
+    base_profile: "efficient"
+    vessel: "panamax"
+    w_ice: 2.0
+    w_wave: 1.0
+    w_ais: 2.0
+    w_ais_corridor: 2.0
+    w_ais_congestion: 0.8
+    use_edl: false
+    use_edl_uncertainty: false
+
+  southern_route_safe:
+    title: "Southern Arctic Belt (Safe)"
+    description: "Lower-latitude belt avoiding heavy ice while keeping moderate distance."
+    start_lat: 64.0
+    start_lon: 35.0
+    end_lat: 69.0
+    end_lon: 110.0
+    ym: "202412"
+    grid_mode: "real"
+    base_profile: "edl_safe"
+    vessel: "handy"
+    w_ice: 3.0
+    w_wave: 1.5
+    w_ais: 2.5
+    w_ais_corridor: 2.5
+    w_ais_congestion: 1.0
+    use_edl: true
+    use_edl_uncertainty: false
+
+  west_to_east_demo:
+    title: "West to East Demo Traverse"
+    description: "High-latitude demo sweep to validate demo grid end-to-end."
+    start_lat: 66.0
+    start_lon: 5.0
+    end_lat: 78.0
+    end_lon: 150.0
+    ym: "202412"
+    grid_mode: "demo"
+    base_profile: "efficient"
+    vessel: "handy"
+    w_ice: 3.5
+    w_wave: 2.5
+    w_ais: 1.5
+    w_ais_corridor: 1.5
+    w_ais_congestion: 0.6
+    use_edl: false
+    use_edl_uncertainty: false
+
+  high_ais_density_case:
+    title: "High AIS Density Corridor"
+    description: "Stress AIS avoidance and corridor preference in busy lanes."
+    start_lat: 71.0
+    start_lon: 10.0
+    end_lat: 72.5
+    end_lon: 60.0
+    ym: "202412"
+    grid_mode: "real"
+    base_profile: "efficient"
+    vessel: "panamax"
+    w_ice: 1.5
+    w_wave: 1.5
+    w_ais: 5.0
+    w_ais_corridor: 5.0
+    w_ais_congestion: 2.0
+    use_edl: false
+    use_edl_uncertainty: false
+
+  high_uncertainty_case:
+    title: "High Uncertainty EDL Probe"
+    description: "Probe EDL risk vs uncertainty weights across long ice edge."
+    start_lat: 72.0
+    start_lon: 40.0
+    end_lat: 74.5
+    end_lon: 140.0
+    ym: "202412"
+    grid_mode: "real"
+    base_profile: "edl_robust"
+    vessel: "ice_class"
+    w_ice: 3.5
+    w_wave: 2.0
+    w_ais: 2.5
+    w_ais_corridor: 2.5
+    w_ais_congestion: 1.0
+    use_edl: true
+    use_edl_uncertainty: true

@@ -1,0 +1,18 @@
+{
+  "ym": "202412",
+  "p_sic": 1.0,
+  "q_wave": 0.8,
+  "b0": -0.3154221494642199,
+  "b1": -0.6182631169513993,
+  "b2": -0.013752552725152621,
+  "rmse_train": 0.38143874481434253,
+  "rmse_holdout": 0.3880521250387506,
+  "r2_holdout": -0.010271972011046904,
+  "n_samples_used": 3000,
+  "n_mmsi_used": 100,
+  "n_bad_lines": 0,
+  "n_nan_dropped": 0,
+  "n_sog_filtered": 0,
+  "timestamp_utc": "2025-12-14T07:39:18.131585",
+  "notes": "baseline=P80 per MMSI; holdout_ratio=0.2"
+}

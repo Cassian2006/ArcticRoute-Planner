@@ -1,0 +1,301 @@
+# 船舶参数配置 - 两层结构（业务船型 × 冰级标准）
+#
+# 本配置文件定义了船舶的业务船型和冰级标准，以及相应的参数。
+# 
+# 冰厚阈值说明：
+#   - 这些阈值是初始工程估计，基于 Polar Class 和 FSICR 标准
+#   - 后续将通过 AIS 轨迹和 EDL 模型进行校准
+#   - max_ice_thickness_m: 设计可通行最大冰厚（米）
+#   - ice_margin_factor: 安全裕度系数（0..1），用于计算有效最大冰厚
+
+# ============================================================================
+# 业务船型定义
+# ============================================================================
+
+vessel_types:
+  feeder:
+    label: "Feeder"
+    dwt_range: [5000, 15000]
+    design_speed_kn: 13.0
+    base_fuel_per_km: 0.020
+    description: "支线船，小型通用船"
+
+  handysize:
+    label: "Handysize"
+    dwt_range: [20000, 40000]
+    design_speed_kn: 13.0
+    base_fuel_per_km: 0.035
+    description: "灵便型散货船"
+
+  panamax:
+    label: "Panamax"
+    dwt_range: [65000, 85000]
+    design_speed_kn: 14.0
+    base_fuel_per_km: 0.050
+    description: "巴拿马型船，可通过巴拿马运河"
+
+  aframax:
+    label: "Aframax"
+    dwt_range: [80000, 120000]
+    design_speed_kn: 13.5
+    base_fuel_per_km: 0.055
+    description: "阿芙拉型油轮"
+
+  suezmax:
+    label: "Suezmax"
+    dwt_range: [120000, 200000]
+    design_speed_kn: 14.0
+    base_fuel_per_km: 0.070
+    description: "苏伊士型船，可通过苏伊士运河"
+
+  capesize:
+    label: "Capesize"
+    dwt_range: [150000, 220000]
+    design_speed_kn: 13.0
+    base_fuel_per_km: 0.080
+    description: "好望角型散货船，最大型通用船"
+
+  container:
+    label: "Container"
+    dwt_range: [40000, 200000]
+    design_speed_kn: 18.0
+    base_fuel_per_km: 0.065
+    description: "集装箱船"
+
+  lng:
+    label: "LNG Carrier"
+    dwt_range: [130000, 180000]
+    design_speed_kn: 19.0
+    base_fuel_per_km: 0.045
+    description: "液化天然气运输船"
+
+  tanker:
+    label: "Tanker"
+    dwt_range: [30000, 150000]
+    design_speed_kn: 14.0
+    base_fuel_per_km: 0.055
+    description: "油轮"
+
+  bulk_carrier:
+    label: "Bulk Carrier"
+    dwt_range: [30000, 200000]
+    design_speed_kn: 13.0
+    base_fuel_per_km: 0.050
+    description: "散货船"
+
+# ============================================================================
+# 冰级标准定义
+# ============================================================================
+
+ice_classes:
+  no_ice_class:
+    label: "No Ice Class"
+    max_ice_thickness_m: 0.25
+    description: "非冰级船，仅可通行薄冰（<0.25m）"
+    standard: "N/A"
+    category: "non_ice_class"
+
+  # FSICR（芬兰-瑞典冰级规则）
+  fsicr_1c:
+    label: "FSICR 1C"
+    max_ice_thickness_m: 0.30
+    description: "芬兰-瑞典冰级 1C，可通行厚度 ~0.3m 的一年冰"
+    standard: "Finnish-Swedish Ice Class Rules"
+    category: "fsicr"
+
+  fsicr_1b:
+    label: "FSICR 1B"
+    max_ice_thickness_m: 0.50
+    description: "芬兰-瑞典冰级 1B，可通行厚度 ~0.5m 的一年冰"
+    standard: "Finnish-Swedish Ice Class Rules"
+    category: "fsicr"
+
+  fsicr_1a:
+    label: "FSICR 1A"
+    max_ice_thickness_m: 0.80
+    description: "芬兰-瑞典冰级 1A，可通行厚度 ~0.8m 的一年冰"
+    standard: "Finnish-Swedish Ice Class Rules"
+    category: "fsicr"
+
+  fsicr_1a_super:
+    label: "FSICR 1A Super"
+    max_ice_thickness_m: 1.00
+    description: "芬兰-瑞典冰级 1A Super，可通行厚度 ~1.0m 的一年冰"
+    standard: "Finnish-Swedish Ice Class Rules"
+    category: "fsicr"
+
+  # Polar Class（IMO Polar Code）
+  polar_pc7:
+    label: "Polar Class PC7"
+    max_ice_thickness_m: 1.20
+    description: "IMO Polar Class PC7，可通行厚度 ~1.2m 的一年冰"
+    standard: "IMO Polar Code"
+    category: "polar_class"
+
+  polar_pc6:
+    label: "Polar Class PC6"
+    max_ice_thickness_m: 1.50
+    description: "IMO Polar Class PC6，可通行厚度 ~1.5m 的一年冰"
+    standard: "IMO Polar Code"
+    category: "polar_class"
+
+  polar_pc5:
+    label: "Polar Class PC5"
+    max_ice_thickness_m: 2.00
+    description: "IMO Polar Class PC5，可通行厚度 ~2.0m 的一年冰"
+    standard: "IMO Polar Code"
+    category: "polar_class"
+
+  polar_pc4:
+    label: "Polar Class PC4"
+    max_ice_thickness_m: 2.50
+    description: "IMO Polar Class PC4，可通行厚度 ~2.5m 的一年冰（多年冰）"
+    standard: "IMO Polar Code"
+    category: "polar_class"
+    ui_available: false  # 暂不在 UI 中开放
+
+  polar_pc3:
+    label: "Polar Class PC3"
+    max_ice_thickness_m: 3.00
+    description: "IMO Polar Class PC3，可通行厚度 ~3.0m 的多年冰"
+    standard: "IMO Polar Code"
+    category: "polar_class"
+    ui_available: false  # 暂不在 UI 中开放
+
+# ============================================================================
+# 预定义船舶配置
+# ============================================================================
+
+default_profiles:
+  # 无冰级船
+  handy:
+    name: "Handysize (No Ice Class)"
+    vessel_type: "handysize"
+    ice_class: "no_ice_class"
+    ice_margin_factor: 0.85
+    description: "灵便型散货船，无冰级"
+
+  panamax:
+    name: "Panamax (No Ice Class)"
+    vessel_type: "panamax"
+    ice_class: "no_ice_class"
+    ice_margin_factor: 0.90
+    description: "巴拿马型船，无冰级"
+
+  capesize:
+    name: "Capesize (No Ice Class)"
+    vessel_type: "capesize"
+    ice_class: "no_ice_class"
+    ice_margin_factor: 0.90
+    description: "好望角型散货船，无冰级"
+
+  # 冰级船
+  handy_1a:
+    name: "Handysize + FSICR 1A"
+    vessel_type: "handysize"
+    ice_class: "fsicr_1a"
+    ice_margin_factor: 0.90
+    description: "灵便型散货船，FSICR 1A 冰级"
+
+  panamax_pc7:
+    name: "Panamax + Polar Class PC7"
+    vessel_type: "panamax"
+    ice_class: "polar_pc7"
+    ice_margin_factor: 0.95
+    description: "巴拿马型船，Polar Class PC7 冰级"
+
+  ice_class:
+    name: "Ice-Class Cargo (Handysize + PC7)"
+    vessel_type: "handysize"
+    ice_class: "polar_pc7"
+    ice_margin_factor: 0.95
+    description: "冰级货船，Handysize + Polar Class PC7"
+
+  # LNG 运输船
+  lng:
+    name: "LNG Carrier (No Ice Class)"
+    vessel_type: "lng"
+    ice_class: "no_ice_class"
+    ice_margin_factor: 0.85
+    description: "液化天然气运输船，无冰级"
+
+# ============================================================================
+# 冰厚约束配置
+# ============================================================================
+
+ice_constraints:
+  # 硬约束（hard constraint）
+  # 冰厚超过 max_ice_thickness_m × ice_margin_factor 时，成本设为 inf（不可通行）
+  hard_constraint:
+    enabled: true
+    description: "冰厚超过有效最大冰厚时，路由不可通行"
+
+  # 软约束（soft constraint）
+  # 在 soft_threshold 和 max_ice_thickness_m 之间，施加二次惩罚
+  soft_constraint:
+    enabled: true
+    threshold_ratio: 0.7  # soft_threshold = 0.7 × max_ice_thickness_m
+    weight: 3.0           # 软约束权重系数
+    description: "冰厚在软约束区间内时，施加二次惩罚"
+
+# ============================================================================
+# 参数校准配置
+# ============================================================================
+
+calibration:
+  # 初始参数来源
+  source: "engineering_estimates"
+  
+  # 校准方法
+  methods:
+    - name: "AIS Trajectory Analysis"
+      description: "基于 AIS 轨迹数据的参数校准"
+      status: "planned"
+      
+    - name: "EDL Model Training"
+      description: "使用 Evidential Deep Learning 模型进行校准"
+      status: "planned"
+      
+    - name: "Grid Search Optimization"
+      description: "使用网格搜索和 logistic 回归进行参数优化"
+      status: "implemented"
+      script: "scripts/calibrate_env_exponents.py"
+  
+  # 最后校准时间
+  last_calibration: null
+  
+  # 校准报告位置
+  report_location: "reports/exponent_fit_report.md"
+
+# ============================================================================
+# 文档和参考
+# ============================================================================
+
+documentation:
+  standards:
+    - name: "IMO Polar Code"
+      url: "https://www.imo.org/en/OurWork/Environment/PolarCode/Pages/default.aspx"
+      description: "国际海事组织极地规则"
+    
+    - name: "Finnish-Swedish Ice Class Rules"
+      url: "https://www.abb.com/marine"
+      description: "芬兰-瑞典冰级规则"
+    
+    - name: "Arctic Shipping and Ice Class Ships"
+      url: "https://www.arctictoday.com/"
+      description: "北极航运和冰级船舶"
+  
+  ice_thickness_categories:
+    thin_ice:
+      range: [0, 0.3]
+      description: "薄冰（thin ice）"
+    
+    first_year_ice:
+      range: [0.3, 2.0]
+      description: "一年冰（first-year ice）"
+    
+    multi_year_ice:
+      range: [2.0, 10.0]
+      description: "多年冰（multi-year ice）"
+
+
