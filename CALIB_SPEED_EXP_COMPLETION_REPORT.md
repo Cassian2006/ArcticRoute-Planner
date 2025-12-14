@@ -261,3 +261,7 @@ print(cost_field.meta["sic_power_effective"])  # 实际使用的 p 值
 
 
 
+
+
+
+

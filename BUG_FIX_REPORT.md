@@ -180,3 +180,7 @@ render_pipeline(pipeline.get_stages_list(), pipeline_placeholder)
 
 
 
+
+
+
+

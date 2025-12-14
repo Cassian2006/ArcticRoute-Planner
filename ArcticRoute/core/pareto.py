@@ -1,213 +1,105 @@
-"""
-Pareto 多目标前沿分析模块。
-
-提供候选解的定义、支配关系判断、Pareto 前沿计算和数据框导出功能。
-"""
-
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
-import pandas as pd
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List, Sequence
 
-from .analysis import RouteCostBreakdown
+import math
+
+try:
+    import pandas as pd
+except Exception:  # pragma: no cover
+    pd = None
 
 
-@dataclass
-class CandidateSolution:
-    """候选路线解的数据结构。
-    
-    Attributes:
-        key: 候选 ID（例如 "efficient", "edl_safe", "edl_robust", "random_001" 等）
-        route: 路线坐标列表 [(lat, lon), ...]
-        breakdown: 成本分解结果（RouteCostBreakdown 对象）
-        eco: 生态经济指标字典（可选），例如 {"fuel_total_t": 123.4, "co2_total_t": 456.7}
-        meta: 元数据字典，保存权重配置等，例如 {"w_ice": 1.0, "w_wave": 0.5, ...}
-    """
-    
+@dataclass(frozen=True)
+class ParetoSolution:
     key: str
-    route: List[Tuple[float, float]]
-    breakdown: RouteCostBreakdown
-    eco: Optional[Dict[str, float]] = None
-    meta: Optional[Dict[str, float]] = None
-    
-    def __post_init__(self):
-        """初始化默认值。"""
-        if self.eco is None:
-            self.eco = {}
-        if self.meta is None:
-            self.meta = {}
+    objectives: Dict[str, float]          # e.g. distance_km, total_cost, edl_risk, edl_uncertainty
+    route: List[tuple[float, float]]      # (lat, lon)
+    component_totals: Dict[str, float]    # e.g. ice_risk, wave_risk, ais_corridor_reward ...
+    meta: Dict[str, Any]                  # weights / toggles / notes
 
 
-def dominates(
-    a: CandidateSolution,
-    b: CandidateSolution,
-    minimize_fields: Tuple[str, ...] = ("distance_km", "total_cost", "edl_risk", "edl_uncertainty"),
-) -> bool:
-    """
-    判断候选解 a 是否支配候选解 b。
-    
-    支配定义：a 在所有目标上都不劣于 b，且至少在一个目标上严格优于 b。
-    
-    Args:
-        a: 候选解 A
-        b: 候选解 B
-        minimize_fields: 要最小化的目标字段名称元组
-    
-    Returns:
-        True 如果 a 支配 b，否则 False
-    """
-    
-    def get_value(sol: CandidateSolution, field: str) -> float:
-        """从候选解中获取指标值，缺失则返回 0。"""
-        if field == "distance_km":
-            # 从 breakdown.s_km 的最后一个值获取距离
-            return sol.breakdown.s_km[-1] if sol.breakdown.s_km else 0.0
-        elif field == "total_cost":
-            return sol.breakdown.total_cost
-        elif field == "edl_risk":
-            return sol.breakdown.component_totals.get("edl_risk", 0.0)
-        elif field == "edl_uncertainty":
-            return sol.breakdown.component_totals.get("edl_uncertainty_penalty", 0.0)
-        elif field == "ice_risk":
-            return sol.breakdown.component_totals.get("ice_risk", 0.0)
-        elif field == "wave_risk":
-            return sol.breakdown.component_totals.get("wave_risk", 0.0)
-        elif field == "ais_risk":
-            return sol.breakdown.component_totals.get("ais_density", 0.0)
-        else:
-            # 尝试从 eco 字典中获取
-            if sol.eco and field in sol.eco:
-                return sol.eco[field]
-            return 0.0
-    
-    # 检查 a 是否在所有目标上都不劣于 b
-    better_or_equal = True
-    strictly_better = False
-    
-    for field in minimize_fields:
-        val_a = get_value(a, field)
-        val_b = get_value(b, field)
-        
-        if val_a > val_b:
-            # a 在该目标上劣于 b
-            better_or_equal = False
-            break
-        elif val_a < val_b:
-            # a 在该目标上严格优于 b
-            strictly_better = True
-    
-    return better_or_equal and strictly_better
+def dominates(a: ParetoSolution, b: ParetoSolution, fields: Sequence[str]) -> bool:
+    """a dominates b if a is no worse in all fields and better in at least one (minimization)."""
+    better = False
+    for f in fields:
+        av = float(a.objectives.get(f, 0.0))
+        bv = float(b.objectives.get(f, 0.0))
+        if math.isnan(av) and not math.isnan(bv):
+            return False
+        if av > bv:
+            return False
+        if av < bv:
+            better = True
+    return better
 
 
-def pareto_front(
-    candidates: List[CandidateSolution],
-    minimize_fields: Tuple[str, ...] = ("distance_km", "total_cost", "edl_risk", "edl_uncertainty"),
-) -> List[CandidateSolution]:
-    """
-    计算 Pareto 前沿。
-    
-    使用 O(n^2) 算法：对每个候选解，检查是否被其他候选解支配。
-    
-    Args:
-        candidates: 候选解列表
-        minimize_fields: 要最小化的目标字段名称元组
-    
-    Returns:
-        Pareto 前沿上的候选解列表
-    """
-    if not candidates:
-        return []
-    
-    front = []
-    
-    for i, candidate_a in enumerate(candidates):
+def pareto_front(cands: Sequence[ParetoSolution], fields: Sequence[str]) -> List[ParetoSolution]:
+    out: List[ParetoSolution] = []
+    for i, a in enumerate(cands):
         dominated = False
-        
-        for j, candidate_b in enumerate(candidates):
+        for j, b in enumerate(cands):
             if i == j:
                 continue
-            
-            # 检查 candidate_b 是否支配 candidate_a
-            if dominates(candidate_b, candidate_a, minimize_fields):
+            if dominates(b, a, fields):
                 dominated = True
                 break
-        
         if not dominated:
-            front.append(candidate_a)
-    
-    return front
+            out.append(a)
+    return out
 
 
-def solutions_to_dataframe(
-    solutions: List[CandidateSolution],
-    include_fields: Optional[List[str]] = None,
-) -> pd.DataFrame:
+def extract_objectives_from_breakdown(breakdown: Any) -> Dict[str, float]:
     """
-    将候选解列表转换为 DataFrame。
-    
-    Args:
-        solutions: 候选解列表
-        include_fields: 要包含的字段列表。如果为 None，则包含默认字段。
-                       默认字段：key, distance_km, total_cost, edl_risk, edl_uncertainty, 
-                                ice_risk, wave_risk, ais_risk
-    
-    Returns:
-        DataFrame，其中每行代表一个候选解
+    breakdown is RouteCostBreakdown (see arcticroute.core.analysis.compute_route_cost_breakdown)
+    Fields are best-effort: missing -> 0.0
     """
-    
-    if include_fields is None:
-        include_fields = [
-            "key",
-            "distance_km",
-            "total_cost",
-            "edl_risk",
-            "edl_uncertainty",
-            "ice_risk",
-            "wave_risk",
-            "ais_risk",
-        ]
-    
+    obj: Dict[str, float] = {}
+    # distance_km: prefer s_km[-1]
+    dist = 0.0
+    try:
+        s = getattr(breakdown, "s_km", None)
+        if s:
+            dist = float(s[-1])
+    except Exception:
+        dist = 0.0
+    obj["distance_km"] = dist
+
+    # total_cost
+    obj["total_cost"] = float(getattr(breakdown, "total_cost", 0.0) or 0.0)
+
+    # edl components (best-effort)
+    ct = getattr(breakdown, "component_totals", {}) or {}
+    obj["edl_risk"] = float(ct.get("edl_risk", 0.0) or 0.0)
+
+    # uncertainty may appear under different keys
+    obj["edl_uncertainty"] = float(
+        ct.get("edl_uncertainty_penalty", ct.get("edl_uncertainty", 0.0)) or 0.0
+    )
+    return obj
+
+
+def solutions_to_dataframe(solutions: Sequence[ParetoSolution]):
+    if pd is None:
+        raise RuntimeError("pandas is required for solutions_to_dataframe()")
+
     rows = []
-    
-    for sol in solutions:
-        row = {}
-        
-        for field in include_fields:
-            if field == "key":
-                row[field] = sol.key
-            elif field == "distance_km":
-                row[field] = sol.breakdown.s_km[-1] if sol.breakdown.s_km else 0.0
-            elif field == "total_cost":
-                row[field] = sol.breakdown.total_cost
-            elif field == "edl_risk":
-                row[field] = sol.breakdown.component_totals.get("edl_risk", 0.0)
-            elif field == "edl_uncertainty":
-                row[field] = sol.breakdown.component_totals.get("edl_uncertainty_penalty", 0.0)
-            elif field == "ice_risk":
-                row[field] = sol.breakdown.component_totals.get("ice_risk", 0.0)
-            elif field == "wave_risk":
-                row[field] = sol.breakdown.component_totals.get("wave_risk", 0.0)
-            elif field == "ais_risk":
-                row[field] = sol.breakdown.component_totals.get("ais_density", 0.0)
-            elif field in sol.eco:
-                row[field] = sol.eco[field]
-            else:
-                row[field] = 0.0
-        
+    for s in solutions:
+        row = {"key": s.key}
+        row.update(s.objectives)
+        # include common components if present
+        for k in [
+            "ice_risk", "wave_risk", "ais_risk", "ais_density", "ais_corridor_reward",
+            "base_distance",
+        ]:
+            if k in s.component_totals:
+                row[k] = float(s.component_totals.get(k, 0.0) or 0.0)
         rows.append(row)
-    
-    # 如果没有行，创建一个空 DataFrame，但保留列
-    if not rows:
-        return pd.DataFrame(columns=include_fields)
-    
-    return pd.DataFrame(rows)
 
-
-__all__ = [
-    "CandidateSolution",
-    "dominates",
-    "pareto_front",
-    "solutions_to_dataframe",
-]
-
+    df = pd.DataFrame(rows)
+    # ensure stable columns
+    for col in ["distance_km", "total_cost", "edl_risk", "edl_uncertainty"]:
+        if col not in df.columns:
+            df[col] = 0.0
+    return df

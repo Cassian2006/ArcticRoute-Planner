@@ -1,15 +1,26 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-PolarRoute 后端实现 (Phase 5A)
+PolarRoute 后端实现 (Phase 5A + 5B)
 
 通过 CLI 调用 PolarRoute 的 optimise_routes 命令，解析输出 route.json。
 
+支持两种模式：
+1. Phase 5A：外部 vessel_mesh.json + route_config.json
+2. Phase 5B：从 pipeline 目录自动查找最新的 vessel_mesh.json
+
 使用方式：
+    # Phase 5A：外部文件模式
     backend = PolarRouteBackend(
         vessel_mesh_path="/path/to/vessel_mesh.json",
         route_config_path="/path/to/route_config.json"
     )
+    
+    # Phase 5B：Pipeline 模式
+    backend = PolarRouteBackend(
+        pipeline_dir="/path/to/pipeline"
+    )
+    
     path = backend.plan((start_lat, start_lon), (end_lat, end_lon))
 """
 
@@ -31,28 +42,57 @@ class PolarRouteBackend:
     PolarRoute 路由规划后端。
     
     通过 CLI 调用 PolarRoute 的 optimise_routes 命令。
+    支持两种初始化模式：
+    - 外部文件模式（Phase 5A）：vessel_mesh_path + route_config_path
+    - Pipeline 模式（Phase 5B）：pipeline_dir（自动查找最新的 vessel_mesh）
     """
     
     def __init__(
         self,
-        vessel_mesh_path: str,
-        route_config_path: str,
+        vessel_mesh_path: Optional[str] = None,
+        route_config_path: Optional[str] = None,
+        pipeline_dir: Optional[str] = None,
         output_dir: Optional[str] = None,
     ):
         """
         初始化 PolarRoute 后端。
         
         Args:
-            vessel_mesh_path: vessel_mesh.json 路径
-            route_config_path: route_config.json 路径
+            vessel_mesh_path: vessel_mesh.json 路径（Phase 5A 模式）
+            route_config_path: route_config.json 路径（Phase 5A 模式）
+            pipeline_dir: Pipeline 目录路径（Phase 5B 模式）
             output_dir: 输出目录（默认使用临时目录）
         
         Raises:
-            PlannerBackendError: 如果 optimise_routes 命令不可用
+            PlannerBackendError: 如果参数不合法或文件不存在
         """
+        # 检查 optimise_routes 命令
+        if not shutil.which("optimise_routes"):
+            raise PlannerBackendError(
+                "optimise_routes 命令不可用。请安装 PolarRoute: pip install polar-route"
+            )
+        
+        # 模式判断
+        if pipeline_dir:
+            # Phase 5B：Pipeline 模式
+            self._init_pipeline_mode(pipeline_dir)
+        elif vessel_mesh_path and route_config_path:
+            # Phase 5A：外部文件模式
+            self._init_external_mode(vessel_mesh_path, route_config_path)
+        else:
+            raise PlannerBackendError(
+                "必须提供以下之一：\n"
+                "1. vessel_mesh_path + route_config_path（Phase 5A 外部文件模式）\n"
+                "2. pipeline_dir（Phase 5B Pipeline 模式）"
+            )
+        
+        self.output_dir = Path(output_dir) if output_dir else None
+    
+    def _init_external_mode(self, vessel_mesh_path: str, route_config_path: str) -> None:
+        """初始化外部文件模式（Phase 5A）"""
         self.vessel_mesh_path = Path(vessel_mesh_path)
         self.route_config_path = Path(route_config_path)
-        self.output_dir = Path(output_dir) if output_dir else None
+        self.pipeline_dir = None
         
         # 检查输入文件
         if not self.vessel_mesh_path.exists():
@@ -64,11 +104,59 @@ class PolarRouteBackend:
                 f"route_config 文件不存在: {self.route_config_path}"
             )
         
-        # 检查 optimise_routes 命令
-        if not shutil.which("optimise_routes"):
+        logger.info(f"PolarRoute 后端初始化（Phase 5A 外部文件模式）")
+        logger.debug(f"  vessel_mesh: {self.vessel_mesh_path}")
+        logger.debug(f"  route_config: {self.route_config_path}")
+    
+    def _init_pipeline_mode(self, pipeline_dir: str) -> None:
+        """初始化 Pipeline 模式（Phase 5B）"""
+        from arcticroute.integrations.polarroute_artifacts import find_latest_vessel_mesh
+        
+        self.pipeline_dir = Path(pipeline_dir)
+        
+        if not self.pipeline_dir.exists():
             raise PlannerBackendError(
-                "optimise_routes 命令不可用。请安装 PolarRoute: pip install polar-route"
+                f"Pipeline 目录不存在: {self.pipeline_dir}"
             )
+        
+        # 查找最新的 vessel_mesh.json
+        mesh_path = find_latest_vessel_mesh(str(self.pipeline_dir))
+        
+        if not mesh_path:
+            raise PlannerBackendError(
+                f"未找到 vessel_mesh.json 在 Pipeline 目录中: {self.pipeline_dir}\n"
+                "请先执行 pipeline execute，或检查目录结构。"
+            )
+        
+        self.vessel_mesh_path = Path(mesh_path)
+        
+        # 对于 route_config，暂时假设在 pipeline 根目录或 config 子目录
+        # 如果找不到，使用 None（可能需要用户手动指定）
+        potential_config_paths = [
+            self.pipeline_dir / "route_config.json",
+            self.pipeline_dir / "config" / "route_config.json",
+            self.pipeline_dir / "configs" / "route_config.json",
+        ]
+        
+        self.route_config_path = None
+        for config_path in potential_config_paths:
+            if config_path.exists():
+                self.route_config_path = config_path
+                break
+        
+        if not self.route_config_path:
+            raise PlannerBackendError(
+                f"未找到 route_config.json 在 Pipeline 目录中: {self.pipeline_dir}\n"
+                "请确保 route_config.json 在以下位置之一：\n"
+                f"  - {self.pipeline_dir / 'route_config.json'}\n"
+                f"  - {self.pipeline_dir / 'config' / 'route_config.json'}\n"
+                f"  - {self.pipeline_dir / 'configs' / 'route_config.json'}"
+            )
+        
+        logger.info(f"PolarRoute 后端初始化（Phase 5B Pipeline 模式）")
+        logger.debug(f"  pipeline_dir: {self.pipeline_dir}")
+        logger.debug(f"  vessel_mesh: {self.vessel_mesh_path}")
+        logger.debug(f"  route_config: {self.route_config_path}")
     
     def plan(
         self,

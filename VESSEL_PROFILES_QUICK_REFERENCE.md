@@ -193,3 +193,7 @@ st.write(f"有效冰厚: {profile.get_effective_max_ice_thickness():.2f}m")
 
 
 
+
+
+
+
