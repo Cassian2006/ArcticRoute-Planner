@@ -8,4 +8,3 @@ def data_root() -> Path | None:
         return None
     p = Path(val).expanduser().resolve()
     return p if p.exists() else None
-

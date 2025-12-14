@@ -101,11 +101,11 @@ class TestLoadRealGridFromNC:
         """测试加载缺少 lat/lon 变量的文件时返回 None。"""
         from arcticroute.core.grid import load_real_grid_from_nc
 
-        # 创建没有 lat/lon 的 NetCDF 文件
+        # 创建没有 lat/lon 的 NetCDF 文件（不使用 y/x 维度名称以避免自动坐标创建）
         nc_path = tmp_path / "no_coords.nc"
         ds = xr.Dataset(
             data_vars={
-                "temperature": (["y", "x"], np.random.rand(10, 20)),
+                "temperature": (["dim_0", "dim_1"], np.random.rand(10, 20)),
             }
         )
         ds.to_netcdf(nc_path)

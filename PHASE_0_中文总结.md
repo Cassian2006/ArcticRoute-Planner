@@ -144,3 +144,5 @@ VESSEL_TYPE_PARAMETERS: Dict[VesselType, Dict[str, Any]] = {
 **分支**：feat/pareto-front  
 **最后提交**：2bce39d
 
+
+

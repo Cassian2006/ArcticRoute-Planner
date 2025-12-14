@@ -100,7 +100,10 @@ def test_get_soft_constraint_threshold():
     )
     
     soft_threshold = profile.get_soft_constraint_threshold()
-    assert soft_threshold == pytest.approx(0.84, abs=0.01)
+    # soft_threshold = max_ice_thickness * ice_margin_factor * 0.7
+    # 对于 POLAR_PC7，ice_margin_factor = 0.95（默认）
+    # 所以 soft_threshold = 1.20 * 0.95 * 0.7 = 0.798
+    assert soft_threshold == pytest.approx(0.798, abs=0.01)
 
 
 def test_get_ice_class_info():

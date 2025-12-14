@@ -155,3 +155,5 @@ print(f"海上步数: {stats.on_ocean_steps}")
 
 
 
+
+

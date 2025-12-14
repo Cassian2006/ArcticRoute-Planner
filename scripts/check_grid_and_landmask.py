@@ -78,9 +78,9 @@ def main() -> None:
     
     print("\n" + "=" * 80)
     if source == "real":
-        print("✓ 成功加载真实网格与陆地掩码")
+        print("[OK] Successfully loaded real grid and landmask")
     else:
-        print("⚠ 使用 demo 网格与陆地掩码（真实数据不可用）")
+        print("[WARN] Using demo grid and landmask (real data not available)")
     print("=" * 80)
 
 

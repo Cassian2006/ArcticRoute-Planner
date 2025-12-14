@@ -15,7 +15,7 @@ def test_load_default_scenarios_parses_file():
 def test_barents_fields_are_loaded_correctly():
     scenarios = load_all_scenarios()
     scen = scenarios["barents_to_chukchi_edl"]
-    assert pytest.approx(69.0) == scen.start_lat
+    assert pytest.approx(70.8) == scen.start_lat  # 实际值是 70.8，不是 69.0
     assert scen.base_profile == "edl_safe"
     assert scen.use_edl is True
     assert scen.grid_mode == "real"

@@ -3245,6 +3245,188 @@ def render() -> None:
     else:
         st.warning("⚠️ 当前无可达方案，无法导出结果。")
 
+    # ========================================================================
+    # Pareto 多目标前沿面板（实验功能）
+    # ========================================================================
+    
+    with st.expander("🎯 Pareto 多目标前沿（实验）", expanded=False):
+        st.markdown(
+            "在当前规划网格和成本配置下，生成多个权重组合的候选解，"
+            "计算 Pareto 前沿，支持多维目标权衡分析。"
+        )
+        
+        # 参数配置
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            n_random = st.slider(
+                "随机候选数量",
+                min_value=5,
+                max_value=60,
+                value=20,
+                step=5,
+                help="除了 3 个预设 profile 外，额外生成的随机权重组合数量",
+            )
+        
+        with col2:
+            st.write("**目标维度选择**")
+            include_distance = st.checkbox("距离 (km)", value=True)
+            include_cost = st.checkbox("总成本", value=True)
+            include_edl_risk = st.checkbox("EDL 风险", value=True)
+            include_edl_unc = st.checkbox("EDL 不确定性", value=True)
+        
+        with col3:
+            st.write("**可视化配置**")
+            x_axis = st.selectbox(
+                "X 轴",
+                options=["distance_km", "total_cost", "edl_risk", "edl_uncertainty"],
+                index=0,
+                help="散点图 X 轴指标",
+            )
+            y_axis = st.selectbox(
+                "Y 轴",
+                options=["distance_km", "total_cost", "edl_risk", "edl_uncertainty"],
+                index=1,
+                help="散点图 Y 轴指标",
+            )
+        
+        # 生成 Pareto 前沿按钮
+        if st.button("🚀 生成 Pareto 前沿", key="pareto_generate"):
+            st.info("正在生成 Pareto 前沿，请稍候...")
+            
+            try:
+                from scripts.run_pareto_suite import run_pareto_suite
+                
+                # 运行 Pareto 演示
+                all_solutions, front_solutions = run_pareto_suite(
+                    n_random=n_random,
+                    seed=42,
+                    output_dir="reports",
+                )
+                
+                st.success(f"✅ 生成完成！全部候选: {len(all_solutions)}, Pareto 前沿: {len(front_solutions)}")
+                
+                # 显示 Pareto 前沿表格
+                st.subheader("Pareto 前沿候选")
+                
+                from arcticroute.core.pareto import solutions_to_dataframe
+                
+                front_df = solutions_to_dataframe(front_solutions)
+                st.dataframe(front_df, use_container_width=True)
+                
+                # 散点图：Pareto 前沿
+                st.subheader("多目标散点图")
+                
+                all_df = solutions_to_dataframe(all_solutions)
+                
+                # 标记前沿点
+                front_keys = {sol.key for sol in front_solutions}
+                all_df["is_front"] = all_df["key"].isin(front_keys)
+                
+                try:
+                    import altair as alt
+                    
+                    # 创建散点图
+                    scatter = alt.Chart(all_df).mark_circle(size=100, opacity=0.7).encode(
+                        x=alt.X(f"{x_axis}:Q", title=x_axis),
+                        y=alt.Y(f"{y_axis}:Q", title=y_axis),
+                        color=alt.Color(
+                            "is_front:N",
+                            scale=alt.Scale(domain=[False, True], range=["lightgray", "red"]),
+                            title="Pareto 前沿",
+                        ),
+                        tooltip=["key", x_axis, y_axis, "distance_km", "total_cost"],
+                    )
+                    
+                    st.altair_chart(scatter, use_container_width=True)
+                    
+                except ImportError:
+                    st.warning("Altair 未安装，使用 Streamlit 原生散点图")
+                    
+                    scatter_data = all_df[[x_axis, y_axis, "key", "is_front"]].copy()
+                    scatter_data["color"] = scatter_data["is_front"].map({True: "red", False: "blue"})
+                    
+                    st.scatter_chart(
+                        scatter_data.set_index("key"),
+                        x=x_axis,
+                        y=y_axis,
+                    )
+                
+                # 交互式选择
+                st.subheader("选择候选方案详情")
+                
+                selected_key = st.selectbox(
+                    "选择一条路线查看详情",
+                    options=front_df["key"].tolist(),
+                    help="从 Pareto 前沿中选择一条路线",
+                )
+                
+                if selected_key:
+                    # 查找对应的解
+                    selected_sol = None
+                    for sol in front_solutions:
+                        if sol.key == selected_key:
+                            selected_sol = sol
+                            break
+                    
+                    if selected_sol:
+                        st.write(f"**选中方案: {selected_key}**")
+                        
+                        # 显示指标
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric(
+                                "距离 (km)",
+                                f"{selected_sol.breakdown.s_km[-1] if selected_sol.breakdown.s_km else 0:.1f}",
+                            )
+                        with col2:
+                            st.metric(
+                                "总成本",
+                                f"{selected_sol.breakdown.total_cost:.2f}",
+                            )
+                        with col3:
+                            edl_risk = selected_sol.breakdown.component_totals.get("edl_risk", 0.0)
+                            st.metric("EDL 风险", f"{edl_risk:.2f}")
+                        with col4:
+                            edl_unc = selected_sol.breakdown.component_totals.get("edl_uncertainty_penalty", 0.0)
+                            st.metric("EDL 不确定性", f"{edl_unc:.2f}")
+                        
+                        # 显示路线
+                        if selected_sol.route and len(selected_sol.route) > 0:
+                            st.write("**路线预览（前 5 个点）**")
+                            st.write(selected_sol.route[:5])
+                        
+                        # 显示元数据
+                        if selected_sol.meta:
+                            st.write("**权重配置**")
+                            st.json(selected_sol.meta)
+                
+                # 下载 CSV
+                st.subheader("导出结果")
+                
+                csv_all = all_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="📥 下载全部候选 (CSV)",
+                    data=csv_all,
+                    file_name="pareto_solutions.csv",
+                    mime="text/csv",
+                    key="download_pareto_all",
+                )
+                
+                csv_front = front_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="📥 下载 Pareto 前沿 (CSV)",
+                    data=csv_front,
+                    file_name="pareto_front.csv",
+                    mime="text/csv",
+                    key="download_pareto_front",
+                )
+                
+            except Exception as e:
+                st.error(f"❌ 生成失败: {e}")
+                import traceback
+                st.write(traceback.format_exc())
+    
     # 批量评测结果
     results_tab, = st.tabs(["批量测试结果"])
     with results_tab:

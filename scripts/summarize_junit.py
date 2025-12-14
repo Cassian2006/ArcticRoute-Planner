@@ -69,4 +69,3 @@ def _render_md(failures, by_type, by_file):
 
 if __name__ == "__main__":
     main()
-
