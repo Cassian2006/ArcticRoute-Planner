@@ -46,6 +46,9 @@ from arcticroute.config import EDL_MODES, list_edl_modes
 from arcticroute.core.scenarios import load_all_scenarios
 from scripts.export_defense_bundle import build_defense_bundle
 
+# 导入 AIS Density 面板组件
+from arcticroute.ui.ais_density_panel import render_ais_density_panel, render_ais_density_summary
+
 # 导入 Pipeline Timeline 组件
 from arcticroute.ui.components import (
     Pipeline,
