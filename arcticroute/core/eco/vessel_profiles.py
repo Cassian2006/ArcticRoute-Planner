@@ -326,7 +326,9 @@ def get_default_profiles() -> Dict[str, VesselProfile]:
     )
     
     # Handy with Ice Class
-    profiles["handy_ice"] = create_vessel_profile(VesselType.HANDYSIZE, IceClass.FSICR_1A)
+    handy_ice_prof = create_vessel_profile(VesselType.HANDYSIZE, IceClass.FSICR_1A)
+    handy_ice_prof.key = "handy_ice"  # 覆盖 key
+    profiles["handy_ice"] = handy_ice_prof
     
     # Panamax（无冰级）- 冰厚能力中等
     profiles["panamax"] = VesselProfile(
@@ -342,7 +344,9 @@ def get_default_profiles() -> Dict[str, VesselProfile]:
     )
     
     # Panamax with Ice Class
-    profiles["panamax_ice"] = create_vessel_profile(VesselType.PANAMAX, IceClass.POLAR_PC7)
+    panamax_ice_prof = create_vessel_profile(VesselType.PANAMAX, IceClass.POLAR_PC7)
+    panamax_ice_prof.key = "panamax_ice"  # 覆盖 key
+    profiles["panamax_ice"] = panamax_ice_prof
     
     # Capesize（无冰级）
     profiles["capesize"] = VesselProfile(
@@ -358,7 +362,9 @@ def get_default_profiles() -> Dict[str, VesselProfile]:
     )
     
     # Ice-Class（强冰级）- 冰厚能力强
-    profiles["ice_class"] = create_vessel_profile(VesselType.HANDYSIZE, IceClass.POLAR_PC7)
+    ice_class_prof = create_vessel_profile(VesselType.HANDYSIZE, IceClass.POLAR_PC7)
+    ice_class_prof.key = "ice_class"  # 覆盖 key
+    profiles["ice_class"] = ice_class_prof
     
     return profiles
 
