@@ -6,28 +6,47 @@
 from __future__ import annotations
 
 from pathlib import Path
-import importlib.util
 import sys
+import importlib
+import importlib.util
+import types
 
 # 解析 cost.py 的真实路径（包的上一级目录下）
 _pkg_dir = Path(__file__).resolve().parent
 _core_dir = _pkg_dir.parent
 _cost_py = _core_dir / "cost.py"
 
-__all__ = []
+__all__: list[str] = []
 
 if _cost_py.exists():
     try:
-        # 使用一个不与本包冲突的模块名加载 cost.py
+        # 确保父包已在 sys.modules 中
+        # arcticroute 与 arcticroute.core 需要可用，供相对导入（from .grid 等）使用
+        try:
+            import arcticroute as _arcticroute
+        except Exception as e:  # pragma: no cover
+            raise RuntimeError(f"failed to import arcticroute: {e}")
+        # arcticroute.core 作为一个命名空间包（已存在）
+        import arcticroute.core as _arctic_core  # noqa: F401
+
+        # 兼容旧模块名：将 "ArcticRoute" 映射到当前包对象
+        sys.modules.setdefault("ArcticRoute", _arcticroute)
+
+        # 使用 importlib 正规方式加载文件模块
         mod_name = "arcticroute.core._cost_file"
-        if mod_name in sys.modules:
-            _mod = sys.modules[mod_name]
-        else:
-            spec = importlib.util.spec_from_file_location(mod_name, str(_cost_py))
-            assert spec and spec.loader
-            _mod = importlib.util.module_from_spec(spec)
-            sys.modules[mod_name] = _mod
-            spec.loader.exec_module(_mod)  # type: ignore[attr-defined]
+        spec = importlib.util.spec_from_file_location(mod_name, str(_cost_py))
+        if spec is None or spec.loader is None:  # pragma: no cover
+            raise RuntimeError("spec_from_file_location failed for cost.py")
+
+        module = importlib.util.module_from_spec(spec)
+        # 关键：设置 __package__ 以支持相对导入（from .grid 等）
+        module.__package__ = "arcticroute.core"
+        module.__file__ = str(_cost_py)
+        # 注册到 sys.modules 以便子模块互相引用
+        sys.modules[mod_name] = module
+
+        # 执行模块
+        spec.loader.exec_module(module)  # type: ignore[arg-type]
 
         # 选择性导出常用符号
         exports = [
@@ -48,13 +67,13 @@ if _cost_py.exists():
         ]
         g = globals()
         for name in exports:
-            if hasattr(_mod, name):
-                g[name] = getattr(_mod, name)
+            if hasattr(module, name):
+                g[name] = getattr(module, name)
                 __all__.append(name)
-    except Exception as e:
+    except Exception as e:  # pragma: no cover
         # 加载失败时不抛出，以避免影响其它子模块导入
         import warnings
         warnings.warn(f"cost package bridge failed: {e}")
-else:
+else:  # pragma: no cover
     import warnings
     warnings.warn(f"cost.py not found at {_cost_py}")

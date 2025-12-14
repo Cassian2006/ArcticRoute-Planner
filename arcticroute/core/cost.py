@@ -1080,6 +1080,7 @@ def build_cost_from_real_env(
     sic_exp: float | None = None,
     wave_exp: float | None = None,
     scenario_name: str | None = None,
+    rules_config_path: str | None = None,
 ) -> CostField:
     """
     使用真实环境场（sic + wave_swh + ice_thickness_m）构建成本场。
@@ -1154,6 +1155,7 @@ def build_cost_from_real_env(
         sic_exp: 海冰浓度指数（可选，覆盖默认值 1.5）
         wave_exp: 波浪高度指数（可选，覆盖默认值 1.5）
         scenario_name: 场景名称（可选，用于从配置读取默认指数参数）
+        rules_config_path: 极地规则配置文件路径（可选，若提供则应用硬约束禁行 mask）
 
     Returns:
         CostField 对象，包含 components 分解
@@ -1607,6 +1609,53 @@ def build_cost_from_real_env(
                 f"penalty_range=[{congestion_cost.min():.3f}, {congestion_cost.max():.3f}]"
             )
 
+    # ========================================================================
+    # Phase 6: 应用极地规则（硬约束）
+    # ========================================================================
+    rules_meta = {}
+    if rules_config_path is not None:
+        try:
+            from .constraints.polar_rules import (
+                load_polar_rules_config,
+                apply_hard_constraints,
+                integrate_hard_constraints_into_cost,
+            )
+            
+            # 加载规则配置
+            rules_cfg = load_polar_rules_config(rules_config_path)
+            
+            # 构建环境字典用于规则应用
+            env_for_rules = {
+                "landmask": land_mask.astype(int),
+                "sic": env.sic if env.sic is not None else None,
+                "wave": env.wave_swh if env.wave_swh is not None else None,
+                "ice_thickness": env.ice_thickness_m if env.ice_thickness_m is not None else None,
+            }
+            
+            # 应用硬约束
+            blocked_mask, rules_meta = apply_hard_constraints(
+                env_for_rules,
+                vessel_profile.to_dict() if vessel_profile is not None else None,
+                rules_cfg,
+            )
+            
+            # 将禁行 mask 集成到成本场
+            if np.any(blocked_mask):
+                cost = integrate_hard_constraints_into_cost(
+                    cost,
+                    blocked_mask,
+                    blocked_value=1e10,
+                )
+                components["rules_blocked"] = blocked_mask.astype(float)
+                print(
+                    f"[COST] polar rules applied: "
+                    f"blocked_fraction={rules_meta.get('blocked_fraction', 0.0):.4f}, "
+                    f"rules={rules_meta.get('rules_applied', [])}"
+                )
+        except Exception as e:
+            logger.warning(f"[COST] failed to apply polar rules: {e}")
+            rules_meta = {"error": str(e)}
+
     # 构造元数据
     # 记录指数来源
     sic_power_source = "fitted" if ym and sic_exp is not None else "default"
@@ -1618,6 +1667,7 @@ def build_cost_from_real_env(
         "wave_power_effective": wave_exp,
         "sic_power_source": sic_power_source,
         "wave_power_source": wave_power_source,
+        "rules": rules_meta,
     }
     
     return CostField(
