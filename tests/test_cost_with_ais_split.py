@@ -37,8 +37,8 @@ def test_corridor_prefers_high_density():
     corridor = cost_field.components.get("ais_corridor")
     assert corridor is not None
     assert corridor.shape == density.shape
-    # 高密度主航道的成本更低
-    assert corridor[0, 1] < corridor[0, 0]
+    # 高密度主航道的奖励更大（现在 ais_corridor 表示奖励，而不是成本）
+    assert corridor[0, 1] > corridor[0, 0]
 
 
 def test_congestion_penalizes_only_high_quantile():

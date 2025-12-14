@@ -21,6 +21,12 @@ import xarray as xr
 from .grid import Grid2D
 from .env_real import RealEnvLayers, load_real_env_for_grid
 from .eco.vessel_profiles import VesselProfile
+from .ais_density_select import (
+    scan_ais_density_candidates,
+    select_best_candidate,
+    load_and_align_density,
+    compute_grid_signature as compute_grid_signature_new,
+)
 
 # 可选依赖：miles-guess 后端检测
 try:
@@ -475,13 +481,22 @@ def _load_normalized_ais_density(
                     print(f"[AIS] warning: failed to cache resampled density: {e}")
     else:
         try:
-            if hasattr(density, "shape") and density.shape == grid.shape():
-                aligned = np.asarray(density, dtype=float)
-        except Exception:
+            # 处理 numpy 数组或其他数组类型
+            arr = np.asarray(density, dtype=float)
+            if arr.shape == grid.shape():
+                aligned = arr
+            else:
+                # 形状不匹配，尝试重采样
+                # 如果是 numpy 数组，无法重采样（缺少坐标信息）
+                if warn_if_missing:
+                    print(f"[AIS] numpy array shape {arr.shape} != grid shape {grid.shape()}, skipping AIS cost")
+                aligned = None
+        except Exception as e:
+            print(f"[AIS] warning: failed to process density array: {e}")
             aligned = None
 
     if aligned is None:
-        if warn_if_missing:
+        if warn_if_missing and density is not None:
             _warn_ais_once("[AIS] density shape mismatch -> auto-resample failed -> skipped AIS cost")
         return None
 
@@ -1007,11 +1022,13 @@ def build_demo_cost(
 
     if ais_norm is not None:
         if w_corridor > 0:
-            corridor_cost = 1.0 - np.sqrt(np.clip(ais_norm, 0.0, 1.0))
-            corridor_cost = np.clip(corridor_cost, 0.0, 1.0)
-            corridor_cost = w_corridor * np.where(land_mask, np.inf, corridor_cost)
-            cost = cost + corridor_cost
-            components["ais_corridor"] = corridor_cost
+            # 走廊奖励：高密度区域成本更低
+            # corridor_reward = w * sqrt(density)，高密度时更大
+            corridor_reward = w_corridor * np.sqrt(np.clip(ais_norm, 0.0, 1.0))
+            # components 记录奖励值（高密度时大），在陆地上置 0
+            components["ais_corridor"] = np.where(land_mask, 0.0, corridor_reward)
+            # 从总成本减去奖励（即高密度时总成本更低）
+            cost = cost - components["ais_corridor"]
 
         if w_congestion > 0:
             ocean_mask = (~land_mask) & np.isfinite(ais_norm)
@@ -1557,15 +1574,18 @@ def build_cost_from_real_env(
             )
 
         if w_corridor > 0:
-            corridor_cost = 1.0 - np.sqrt(np.clip(ais_norm, 0.0, 1.0))
-            corridor_cost = np.clip(corridor_cost, 0.0, 1.0)
-            corridor_cost = w_corridor * np.where(land_mask, np.inf, corridor_cost)
-            cost = cost + corridor_cost
-            components["ais_corridor"] = corridor_cost
+            # 走廊作为“奖励”：高密度区域降低成本
+            # 走廊奖励：高密度区域成本更低
+            # corridor_reward = w * sqrt(density)，高密度时更大
+            corridor_reward = w_corridor * np.sqrt(np.clip(ais_norm, 0.0, 1.0))
+            # components 记录奖励值（高密度时大），在陆地上置 0
+            components["ais_corridor"] = np.where(land_mask, 0.0, corridor_reward)
+            # 从总成本减去奖励（即高密度时总成本更低）
+            cost = cost - components["ais_corridor"]
             print(
-                f"[COST] AIS corridor bonus applied: "
+                f"[COST] AIS corridor cost applied: "
                 f"w_ais_corridor={w_corridor:.3f}, "
-                f"corridor_range=[{corridor_cost.min():.3f}, {corridor_cost.max():.3f}]"
+                f"corridor_range=[{components['ais_corridor'].min():.3f}, {components['ais_corridor'].max():.3f}]"
             )
 
         if w_congestion > 0:

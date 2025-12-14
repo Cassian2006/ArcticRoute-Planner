@@ -227,9 +227,10 @@ def test_ais_corridor_prefers_high_density():
     assert "ais_corridor" in cost_field.components
     ais_corridor = cost_field.components["ais_corridor"]
     finite_vals = ais_corridor[np.isfinite(ais_corridor)]
-    assert ais_corridor[0, 0] == np.nanmin(finite_vals)
-    assert ais_corridor[0, 1] > ais_corridor[0, 0]
-    assert np.nanmax(finite_vals) >= ais_corridor[0, 1]
+    # 现在 ais_corridor 表示奖励（高密度时大），而不是成本（高密度时小）
+    assert ais_corridor[0, 0] == np.nanmax(finite_vals)
+    assert ais_corridor[0, 1] < ais_corridor[0, 0]
+    assert np.nanmin(finite_vals) <= ais_corridor[0, 1]
 
 
 @pytest.mark.integration
