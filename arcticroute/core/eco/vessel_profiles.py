@@ -312,18 +312,53 @@ def get_default_profiles() -> Dict[str, VesselProfile]:
     # 创建一些常见的组合
     profiles = {}
     
-    # 创建几个关键的组合
-    key_combinations = [
-        ("handy", VesselType.HANDYSIZE, IceClass.NO_ICE_CLASS),
-        ("handy_ice", VesselType.HANDYSIZE, IceClass.FSICR_1A),
-        ("panamax", VesselType.PANAMAX, IceClass.NO_ICE_CLASS),
-        ("panamax_ice", VesselType.PANAMAX, IceClass.POLAR_PC7),
-        ("capesize", VesselType.CAPESIZE, IceClass.NO_ICE_CLASS),
-        ("ice_class", VesselType.HANDYSIZE, IceClass.POLAR_PC7),
-    ]
+    # Handy（无冰级）- 冰厚能力较弱
+    profiles["handy"] = VesselProfile(
+        key="handy",
+        name="Handysize (No Ice Class)",
+        vessel_type=VesselType.HANDYSIZE,
+        ice_class=IceClass.NO_ICE_CLASS,
+        dwt=30000.0,
+        design_speed_kn=13.0,
+        base_fuel_per_km=0.035,
+        max_ice_thickness_m=0.3,
+        ice_margin_factor=0.85,
+    )
     
-    for key, vessel_type, ice_class in key_combinations:
-        profiles[key] = create_vessel_profile(vessel_type, ice_class)
+    # Handy with Ice Class
+    profiles["handy_ice"] = create_vessel_profile(VesselType.HANDYSIZE, IceClass.FSICR_1A)
+    
+    # Panamax（无冰级）- 冰厚能力中等
+    profiles["panamax"] = VesselProfile(
+        key="panamax",
+        name="Panamax (No Ice Class)",
+        vessel_type=VesselType.PANAMAX,
+        ice_class=IceClass.NO_ICE_CLASS,
+        dwt=75000.0,
+        design_speed_kn=14.0,
+        base_fuel_per_km=0.050,
+        max_ice_thickness_m=0.5,
+        ice_margin_factor=0.90,
+    )
+    
+    # Panamax with Ice Class
+    profiles["panamax_ice"] = create_vessel_profile(VesselType.PANAMAX, IceClass.POLAR_PC7)
+    
+    # Capesize（无冰级）
+    profiles["capesize"] = VesselProfile(
+        key="capesize",
+        name="Capesize (No Ice Class)",
+        vessel_type=VesselType.CAPESIZE,
+        ice_class=IceClass.NO_ICE_CLASS,
+        dwt=185000.0,
+        design_speed_kn=13.0,
+        base_fuel_per_km=0.080,
+        max_ice_thickness_m=0.2,  # 大型船舶冰厚能力较弱
+        ice_margin_factor=0.90,
+    )
+    
+    # Ice-Class（强冰级）- 冰厚能力强
+    profiles["ice_class"] = create_vessel_profile(VesselType.HANDYSIZE, IceClass.POLAR_PC7)
     
     return profiles
 
