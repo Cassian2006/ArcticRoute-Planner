@@ -314,6 +314,9 @@ def plan_three_routes(
     w_ais_corridor: float = 0.0,
     w_ais_congestion: float = 0.0,
     w_ais: float | None = None,
+    planner_kernel: str = "A*",
+    polarroute_vessel_mesh_path: str | None = None,
+    polarroute_route_config_path: str | None = None,
 ) -> tuple[dict[str, RouteInfo], dict, dict, dict, str]:
     """
     规划三条路线：efficient / edl_safe / edl_robust（使用 ROUTE_PROFILES 定义的个性化权重）。
@@ -455,15 +458,45 @@ def plan_three_routes(
             )
             cost_fields[profile_key] = cost_field
         
-        # 规划路线
-        path = plan_route_latlon(
-            cost_field,
-            start_lat,
-            start_lon,
-            end_lat,
-            end_lon,
-            neighbor8=allow_diag,
-        )
+        # 规划路线（支持多种规划内核）
+        path = None
+        planner_error = None
+        
+        if planner_kernel == "PolarRoute (external mesh)" and polarroute_vessel_mesh_path and polarroute_route_config_path:
+            # 使用 PolarRoute 后端
+            try:
+                from arcticroute.core.planners.polarroute_backend import PolarRouteBackend
+                
+                pr_backend = PolarRouteBackend(
+                    vessel_mesh_path=polarroute_vessel_mesh_path,
+                    route_config_path=polarroute_route_config_path,
+                )
+                path = pr_backend.plan(
+                    (start_lat, start_lon),
+                    (end_lat, end_lon),
+                )
+            except Exception as e:
+                planner_error = str(e)
+                print(f"[WARN] PolarRoute 规划失败，回退到 A*: {e}")
+                # 回退到 A*
+                path = plan_route_latlon(
+                    cost_field,
+                    start_lat,
+                    start_lon,
+                    end_lat,
+                    end_lon,
+                    neighbor8=allow_diag,
+                )
+        else:
+            # 使用 A* 后端（默认）
+            path = plan_route_latlon(
+                cost_field,
+                start_lat,
+                start_lon,
+                end_lat,
+                end_lon,
+                neighbor8=allow_diag,
+            )
         
         # 构造 RouteInfo
         if path:
@@ -1066,6 +1099,66 @@ def render() -> None:
         selected_vessel = vessel_profiles[selected_vessel_key]
         
         # ====================================================================
+        # Phase 5A：规划内核选择 (A* / PolarRoute)
+        # ====================================================================
+        st.subheader("规划内核")
+        planner_kernel_options = ["A*", "PolarRoute (external mesh)"]
+        planner_kernel_default = st.session_state.get("planner_kernel", "A*")
+        if planner_kernel_default not in planner_kernel_options:
+            planner_kernel_default = "A*"
+        
+        selected_planner_kernel = st.selectbox(
+            "选择规划内核",
+            options=planner_kernel_options,
+            index=planner_kernel_options.index(planner_kernel_default),
+            help="A*: 使用内置 A* 算法 | PolarRoute: 调用外部 PolarRoute CLI（需要预先安装）",
+        )
+        st.session_state["planner_kernel"] = selected_planner_kernel
+        
+        # 如果选择 PolarRoute，显示额外的输入框
+        if selected_planner_kernel == "PolarRoute (external mesh)":
+            st.warning(
+                "⚠️ PolarRoute 模式需要外部 vessel_mesh.json 和 route_config.json 文件。"
+                "请确保 PolarRoute 已安装：`pip install polar-route`"
+            )
+            
+            # 检查 PolarRoute 可用性
+            polarroute_available = False
+            try:
+                import shutil
+                polarroute_available = shutil.which("optimise_routes") is not None
+            except:
+                polarroute_available = False
+            
+            if not polarroute_available:
+                st.error(
+                    "❌ PolarRoute 不可用。请先安装：\n"
+                    "`pip install polar-route`\n\n"
+                    "或运行医生脚本检查：\n"
+                    "`python -m scripts.polarroute_doctor`"
+                )
+                selected_planner_kernel = "A*"
+                st.session_state["planner_kernel"] = "A*"
+            else:
+                st.success("✓ PolarRoute 已安装")
+                
+                vessel_mesh_path = st.text_input(
+                    "vessel_mesh.json 路径",
+                    value=st.session_state.get("polarroute_vessel_mesh_path", ""),
+                    placeholder="例: data_sample/polarroute/vessel_mesh_empty.json",
+                    help="PolarRoute 的船舶网格配置文件",
+                )
+                st.session_state["polarroute_vessel_mesh_path"] = vessel_mesh_path
+                
+                route_config_path = st.text_input(
+                    "route_config.json 路径",
+                    value=st.session_state.get("polarroute_route_config_path", ""),
+                    placeholder="例: data_sample/polarroute/config_empty.json",
+                    help="PolarRoute 的路由配置文件",
+                )
+                st.session_state["polarroute_route_config_path"] = route_config_path
+        
+        # ====================================================================
         # 任务 C：Health Check - 添加 AIS density grid_signature 验证
         # ====================================================================
         # 构建状态信息，包括 grid_signature 验证
@@ -1432,6 +1525,9 @@ def render() -> None:
             w_ais_corridor=w_ais_corridor,
             w_ais_congestion=w_ais_congestion,
             w_ais=w_ais,
+            planner_kernel=selected_planner_kernel,
+            polarroute_vessel_mesh_path=st.session_state.get("polarroute_vessel_mesh_path"),
+            polarroute_route_config_path=st.session_state.get("polarroute_route_config_path"),
         )
         
         # 完成第 5、6 个节点
