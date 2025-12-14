@@ -737,6 +737,16 @@ def render() -> None:
             print(f"[UI] warning: failed to compute grid signature: {e}")
             st.session_state["grid_signature"] = None
 
+        # Landmask 文件输入（可选）
+        st.subheader("陆地掩码 (可选)")
+        explicit_landmask_path = st.text_input(
+            "Landmask 文件路径 (可选)",
+            value=st.session_state.get("explicit_landmask_path", ""),
+            placeholder="例: data_real/landmask/land_mask.nc",
+            help="若指定，将优先使用该文件；否则自动扫描候选目录。",
+        )
+        st.session_state["explicit_landmask_path"] = explicit_landmask_path
+        
         cost_mode_options = ["demo_icebelt", "real_sic_if_available"]
         cost_mode_default = "real_sic_if_available" if grid_mode == "real" else "demo_icebelt"
         cost_mode = st.selectbox(
@@ -1182,23 +1192,26 @@ def render() -> None:
         # 更新第 2 个节点：加载网格与 landmask
         _update_pipeline_node(1, "running", "正在加载...")
         
+        # 使用统一的加载接口
+        from arcticroute.core.grid import load_grid_with_landmask
+        
+        landmask_meta = {}
         if grid_mode == "real":
-            # 尝试加载真实网格
-            real_grid = load_real_grid_from_nc()
-            if real_grid is not None:
-                grid = real_grid
-                # 尝试加载真实 landmask
-                land_mask = load_real_landmask_from_nc(grid)
-                if land_mask is not None:
+            try:
+                # 尝试加载真实网格与 landmask
+                grid, land_mask, meta = load_grid_with_landmask(
+                    prefer_real=True,
+                    explicit_landmask_path=st.session_state.get("explicit_landmask_path"),
+                    landmask_search_dirs=st.session_state.get("landmask_search_dirs"),
+                )
+                landmask_meta = meta
+                grid_source_label = meta.get("source", "unknown")
+                if meta.get("landmask_path") and "fallback" not in str(meta.get("landmask_path", "")).lower():
                     grid_source_label = "real"
-                else:
-                    # 使用 demo landmask
-                    st.warning("真实 landmask 不可用，使用演示 landmask。")
-                    _, land_mask = make_demo_grid(ny=grid.shape()[0], nx=grid.shape()[1])
+                elif grid_source_label == "real":
                     grid_source_label = "real_grid_demo_landmask"
-            else:
-                # 回退到 demo
-                st.warning("真实网格不可用，使用演示网格。")
+            except Exception as e:
+                st.warning(f"加载真实网格失败: {e}")
                 grid, land_mask = make_demo_grid()
                 grid_source_label = "demo"
         else:
@@ -1348,6 +1361,31 @@ def render() -> None:
 
         # 依赖项提示（便于定位渲染/重采样问题）
         with st.expander("诊断与依赖状态 (可展开)"):
+            # Landmask 诊断信息
+            st.subheader("陆地掩码诊断")
+            if landmask_meta:
+                landmask_path = landmask_meta.get("landmask_path", "unknown")
+                landmask_resampled = landmask_meta.get("landmask_resampled", False)
+                landmask_land_fraction = landmask_meta.get("landmask_land_fraction", None)
+                landmask_note = landmask_meta.get("landmask_note", "")
+                
+                st.caption(f"📍 来源: {landmask_path}")
+                if landmask_resampled:
+                    st.caption("🔄 已进行重采样")
+                if landmask_land_fraction is not None:
+                    st.caption(f"🏔️ 陆地比例: {landmask_land_fraction:.2%}")
+                if landmask_note:
+                    st.caption(f"📝 备注: {landmask_note}")
+                
+                # 如果有回退，显示警告
+                if landmask_meta.get("fallback_demo"):
+                    reason = landmask_meta.get("reason", "未知原因")
+                    st.warning(f"⚠️ 已回退到演示 landmask: {reason}")
+            else:
+                st.info("未加载 landmask 元数据")
+            
+            st.divider()
+            
             # pydeck
             try:
                 import pydeck  # type: ignore
