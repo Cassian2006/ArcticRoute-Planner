@@ -1,0 +1,125 @@
+# Prior Transformer 全链配置（E-T18）
+# 目标：集中管理数据、投影、采样、模型、训练、聚类、评测、采纳与导出参数
+
+meta:
+  version: 0.1
+  author: team-prior
+  notes: "配置仅作为默认参考，CLI 显式参数可覆盖"
+
+# 数据与投影
+data:
+  ym: 202412
+  grid_spec: ArcticRoute/config/grid_spec.json
+  tracks: ArcticRoute/data_processed/ais/tracks_${ym}.parquet
+  segment_index: ArcticRoute/data_processed/ais/segment_index_${ym}.parquet
+  embeddings_out: ArcticRoute/data_processed/ais/embeddings_${ym}.parquet
+  centerline_geojson: reports/phaseE/center/prior_centerlines_${ym}.geojson
+  prior_nc_out: ArcticRoute/data_processed/prior/prior_transformer_${ym}.nc
+  selected_prior_nc: ArcticRoute/data_processed/prior/prior_corridor_selected_${ym}.nc
+
+projection:
+  crs: EPSG:3413  # NSIDC Sea Ice Polar Stereographic North
+
+# 采样与切分（E-T03）
+sampler:
+  time_window_s: 21600   # 6h
+  space_window_m: 50000  # 50 km
+  seed: 42
+
+split:
+  train_ratio: 0.8
+  stratify: mmsi
+
+# 特征（E-T04）
+features:
+  posenc: rope   # rope | t2v
+  rope_dim: 64
+  standardize: true
+
+# 模型（E-T05）
+model:
+  d_in: 9
+  d_model: 256
+  nhead: 8
+  num_layers: 6
+  ffn_mult: 4
+  dropout: 0.1
+  rope: true
+  rope_dim: 64
+  checkpoint: true
+
+# 训练（E-T07/07.5）
+train:
+  epochs: 20
+  batch_size: 16
+  grad_accum: 4
+  lr: 0.001
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  amp: true
+  bf16: true
+  compile: false
+  ema_decay: 0.0
+  patience: 5
+  lambda_mim: 0.5
+  temperature: 0.1
+  log_dir: reports/phaseE/train_logs
+
+# 嵌入（E-T09）
+embed:
+  seq_len: 512
+  batch_size: 32
+
+# 聚类（E-T10）
+cluster:
+  min_cluster_size: [30, 50, 80]
+  min_samples: [5, 10, 15]
+  metric: euclidean
+
+# 中心线（E-T11）
+centerline:
+  method: dba_approx     # 先用 DBA 近似，可扩展：kde_ridge
+  band_quantile: 0.75
+  min_cluster_size: 30
+  resample_points: 100
+
+# 栅格化（E-T12）
+rasterize:
+  method: transformer
+  band_quantile: 0.75
+  chunks: { y: 128, x: 256 }
+  compression: { zlib: true, complevel: 4 }
+
+# 评测（E-T13）
+eval:
+  tau: 0.5
+  seed: 42
+
+# 采纳判定（E-T14）
+select:
+  c_min: 0.7
+  d_max_nm: 5.0
+  tau: 0.5
+
+# 路由（E-T15）
+route:
+  w_p: 0.2   # >0 则叠加 PriorPenalty；为 0 则不启用
+  auto_discover: true
+
+# 前端（E-T16）
+frontend:
+  layer_prior: true
+  show_centerline_download: true
+
+
+
+
+
+
+
+
+
+
+
+
+

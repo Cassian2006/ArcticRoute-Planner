@@ -43,9 +43,17 @@ env/
 # Streamlit
 .streamlit/
 *.streamlit.cache/
+.ui_state.json
 
 # 本地数据与样本（不推到 GitHub）
 data_sample/
+data/
+data_processed/
+data_raw/
+outputs/
+logs/
+reports/
+diagnostics/
 *.nc
 *.csv
 *.parquet
@@ -60,13 +68,25 @@ data_sample/
 *.log
 .cache/
 
+# Large data and generated datasets
+ArcticRoute/newDATA_RAW/
+ArcticRoute/diagnostics/
+ArcticRoute/data/
+ArcticRoute/data_processed/
+ArcticRoute/reports/
+ArcticRoute/ArcticRoute/data_raw/
+ArcticRoute/ArcticRoute/data_processed/
+legacy/data_processed/
+legacy/reports/
 
+# Build artefacts
+*.egg-info/
 
+# Ruff and mypy caches
+.ruff_cache/
+.mypy_cache/
+.coverage
 
-
-
-
-
-
-
-
+# Environment files
+.env
+.env.local

@@ -1,0 +1,12 @@
+replan:
+  period_sec: 1800
+  lookahead_nm: 50
+  risk_threshold: 0.55
+  risk_delta: 0.15
+  interact_delta: 0.10
+  eco_delta_pct: 5
+  cool_down_sec: 900
+  handover_nm: 8
+  min_change_nm: 3
+  min_risk_delta: 0.05
+

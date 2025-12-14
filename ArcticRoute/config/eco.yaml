@@ -1,0 +1,23 @@
+eco:
+  enabled_default: false
+  ef_co2_t_per_t_fuel: 3.114
+  alpha_ice: 0.8
+  alpha_wave: 0.3
+  vessel_classes:
+    icebreaker:
+      fuel_per_nm_base: 0.020
+      v_ref_kn: 12
+      ice_class_factor: 0.6
+    cargo_iceclass:
+      fuel_per_nm_base: 0.015
+      v_ref_kn: 12
+      ice_class_factor: 0.8
+    cargo_standard:
+      fuel_per_nm_base: 0.012
+      v_ref_kn: 12
+      ice_class_factor: 1.0
+    fishing_small:
+      fuel_per_nm_base: 0.006
+      v_ref_kn: 10
+      ice_class_factor: 1.1
+

@@ -1,0 +1,53 @@
+# Exclude large data/artifacts to keep build context small
+# Project-level
+.git
+**/__pycache__/
+*.egg-info/
+*.pyc
+*.pyo
+*.log
+.env
+venv/
+.env*/
+node_modules/
+
+# ArcticRoute large dirs and artifacts
+ArcticRoute/data_processed/**
+ArcticRoute/data_raw/**
+ArcticRoute/outputs/**
+ArcticRoute/reports/**
+ArcticRoute/logs/**
+ArcticRoute/notebooks/**
+ArcticRoute/cache/**
+
+# Repo root common large dirs
+reports/**
+outputs/**
+logs/**
+cache/**
+data/**
+data_processed/**
+data_raw/**
+
+# Common large file types
+**/*.nc
+**/*.parquet
+**/*.geojson
+**/*.tif
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.gif
+**/*.mp4
+**/*.mov
+**/*.zip
+**/*.7z
+**/*.tar
+**/*.tar.gz
+**/*.ipynb
+
+# Temp & misc
+_tmp*/
+**/tmp*/
+**/.ipynb_checkpoints/**
+

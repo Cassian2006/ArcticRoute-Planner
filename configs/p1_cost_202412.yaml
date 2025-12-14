@@ -1,0 +1,14 @@
+ym: '202412'
+t0: 0.1
+t1: 0.75
+gamma: 1.5
+alpha: 0.6
+run_id: 20251105T203546
+source_path: C:\Users\sgddsf\Desktop\minimum\ArcticRoute\data_processed\ice_forecast\merged\sic_fcst_202412.nc
+use_snapshot: false
+cost_output: C:\Users\sgddsf\Desktop\minimum\ArcticRoute\data_processed\ice_forecast\merged\ice_cost_202412.nc
+git: {}
+env:
+  python: 3.11.9
+  executable: C:\Users\sgddsf\AppData\Local\Programs\Python\Python311\python.exe
+  platform: Windows-10-10.0.26100-SP0

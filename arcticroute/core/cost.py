@@ -1144,9 +1144,9 @@ def build_cost_from_real_env(
     if env is None and ym is not None:
         env = load_real_env_for_grid(ym=ym)
 
-    # 获取指数参数：优先使用显式参数，否则从场景配置读取，最后使用默认值
+    # 获取指数参数：优先使用显式参数，否则从拟合结果读取，再从场景配置读取，最后使用默认值
     if sic_exp is None or wave_exp is None:
-        default_sic_exp, default_wave_exp = get_default_exponents(scenario_name)
+        default_sic_exp, default_wave_exp = get_default_exponents(scenario_name, ym=ym)
         if sic_exp is None:
             sic_exp = default_sic_exp
         if wave_exp is None:
@@ -1588,8 +1588,16 @@ def build_cost_from_real_env(
             )
 
     # 构造元数据
+    # 记录指数来源
+    sic_power_source = "fitted" if ym and sic_exp is not None else "default"
+    wave_power_source = "fitted" if ym and wave_exp is not None else "default"
+    
     meta = {
         "edl_source": edl_source if 'edl_source' in locals() else None,
+        "sic_power_effective": sic_exp,
+        "wave_power_effective": wave_exp,
+        "sic_power_source": sic_power_source,
+        "wave_power_source": wave_power_source,
     }
     
     return CostField(

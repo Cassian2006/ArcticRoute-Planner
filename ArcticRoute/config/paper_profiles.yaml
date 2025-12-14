@@ -1,0 +1,25 @@
+profiles:
+  quick:
+    months: [202412]
+    scenarios: ["nsr_wbound"]
+    figures: [calibration, pareto, attribution, uncertainty, eco]
+    videos: [risk_tl, fused_tl, route_compare]
+    ablations: []
+  full:
+    months: [202411, 202412, 202501]
+    scenarios: ["nsr_wbound","nwp_eastbound"]
+    figures: [calibration, pareto, attribution, uncertainty, eco, domain_bucket]
+    videos: [risk_tl, fused_tl, route_compare]
+    ablations: [no_cv, no_accident, no_prior, linear_fuse, cvar_vs_mean]
+  ablation:
+    months: [202412]
+    scenarios: ["nsr_wbound"]
+    figures: [ablation_grid]
+    videos: []
+    ablations: [no_cv, no_accident, no_prior, linear_fuse]
+
+
+
+
+
+

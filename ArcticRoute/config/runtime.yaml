@@ -1,0 +1,101 @@
+data:
+  env_nc: data_processed/env/env_clean.nc
+  corridor_prob: data_processed/corridor_prob.nc
+  accident_density_static: data_processed/accident_density_static.nc
+  stac_cache_dir: data_processed/stac_cache
+  cog_dir: data_processed/cog
+  sat_cache_dir: data_processed/sat_cache
+predictor: env_nc
+predictor_params:
+  cv_sat:
+    mission: "S2"
+    prefer_source: "CDSE"
+    max_items: 6
+    cloud_mask: true
+  dl_ice:
+    model_path: models/ice_unet.ts
+    batch_size: 4
+alpha_ice: 0.0  # Weight for blending risk_env with ice_prob (0 disables fusion)
+run:
+  var: risk_env
+  tidx: 0
+  time_step_nodes: 0
+route:
+  start: 75,10
+  goal: 72,40
+cost:
+  beta: 3.0
+  p: 1.0
+  beta_accident: 0.0
+  fuel_alpha: 0.3
+behavior:
+  corridor_path: data_processed/corridor_prob.nc
+  accident_path: null
+  gamma: 0.3
+  interact_weight: 0.2  # Phase F: 交互风险叠加权重，fuse 时若>0将叠加 R_interact
+output:
+  geojson: outputs/route.geojson
+  png: outputs/route_on_risk.png
+live:
+  conf_ice_tau_hours: 24
+  conf_wave_tau_hours: 12
+  default_conf: 0.7
+ui:
+  theme_modern: true
+  ui_sync_strict: true
+  task_background: true
+  task_persist: true
+  pages:
+    planner: true
+    compare: false
+    explain: false
+    live: false
+    review: false
+    reports: false
+    health: false
+  components:
+    legend: true
+    weights_panel: true
+    review_toolbar: true
+  defaults:
+    risk_source: ice
+    risk_agg: mean
+    alpha: 0.95
+    interact_weight: 0.0
+    eco_enabled: false
+    w_e: 0.0
+  eco:
+    enabled: true
+    mode: "local"
+  advanced:
+    # 是否在 UI 中显示各高级功能入口（显示不等于启用，实际启用由用户交互决定）
+    enable_fusion: true
+    enable_interact: true
+    enable_pareto: true
+    enable_robust: true
+    enable_review: true
+    # UI 默认值（仅作为控件默认，不强制）
+    fusion_mode_default: "baseline"     # "baseline"|"linear"|"unetformer"|"poe"|"evidential"
+    w_interact_default: 0.0
+    use_escort_default: false
+    risk_agg_mode_default: "mean"       # "mean"|"quantile"|"cvar"
+    risk_agg_alpha_default: 0.9
+    enable_pareto_tab: true
+    enable_review_tab: true
+    enable_adv_viz_tab: false
+    use_newenv_for_cost: true
+    use_icebreaker_corridor_default: false
+    icebreaker_corridor_alpha_default: 0.5
+    # 高级沉浸式可视化（默认关闭，不影响 1.0）
+    enable_profile_view: true
+    enable_route_replay: true
+    enable_hotspot_markers: true
+planner:
+  default_profile: balanced
+
+flags:
+  route_validation_enabled: true
+  auto_replan_on_invalid: true
+  forbid_land_in_all_profiles: true
+  ais_filter_enabled: true
+  prefer_clean_prior: true

@@ -6,14 +6,6 @@ netCDF4>=1.6.0
 pytest>=7.0.0
 PyYAML>=6.0
 pyarrow>=12.0.0
+streamlit-plotly-events>=0.0.6
 # 训练小模型需要 PyTorch（可选，用于 E0.3）
 torch>=2.0.0
-
-
-
-
-
-
-
-
-

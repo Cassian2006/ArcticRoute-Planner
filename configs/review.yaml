@@ -1,0 +1,9 @@
+tags:
+  avoid_ice_edge: {severity: [low, med, high], buffer_km_default: 3}
+  avoid_traffic_hotspot: {severity: [med, high]}
+  no_go_polygon: {}
+  lock_corridor: {band_km_default: 5}
+  min_clearance_km: {min: 1, max: 20, default: 3}
+  prefer_prior: {}
+  prefer_smoother: {}
+

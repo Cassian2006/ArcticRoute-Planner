@@ -1,0 +1,16 @@
+# Risk fusion configuration for YM=202412
+# This file is used by 'audit.data' and 'risk.fuse' CLI commands.
+
+# Explicitly disable wave risk layer for this version, as it is not yet implemented.
+# This will mark the missing R_wave as 'planned_disabled' in the audit report.
+use_wave: false
+
+# Optional: Define weights for the fusion process.
+# If not provided, the system will use defaults (e.g., alpha=0.6, gamma=0.2, beta=0.2 renormalized).
+weights:
+  alpha: 0.7  # R_ice_eff
+  gamma: 0.3  # R_acc
+  beta: 0.0   # R_wave
+
+
+

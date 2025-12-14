@@ -1,0 +1,11 @@
+# Phase A 路径枚举（只读配置）
+# 注：不在此阶段修改或创建目录；仅提供集中声明，供模块引用。
+# 可按需调整为绝对路径或相对项目根的相对路径。
+
+data_raw: ArcticRoute/data_raw
+data_processed: ArcticRoute/data_processed
+cache: .cache
+reports: reports
+outputs: outputs
+logs: ArcticRoute/logs
+

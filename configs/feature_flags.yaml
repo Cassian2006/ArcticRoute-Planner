@@ -1,0 +1,10 @@
+# Phase A Feature Flags（默认全部关闭）
+# 用于安全开关新功能模块，不影响现有流程。
+# 读取方式：from ArcticRoute.io.flags import is_enabled
+
+risk_module: false
+prior_module: false
+congest_module: false
+transformer_prior: false
+stgnn_congest: false
+
