@@ -12,7 +12,7 @@ import pytest
 from arcticroute.core.cost import build_cost_from_real_env
 from arcticroute.core.env_real import RealEnvLayers
 from arcticroute.core.grid import Grid2D
-from arcticroute.core.eco.vessel_profiles import VesselProfile
+from arcticroute.core.eco.vessel_profiles import VesselProfile, VesselType, IceClass
 
 
 class TestIceClassCostConstraints:
@@ -45,6 +45,8 @@ class TestIceClassCostConstraints:
         vessel = VesselProfile(
             key="test",
             name="Test Vessel",
+            vessel_type=VesselType.PANAMAX,
+            ice_class=IceClass.FSICR_1A,
             dwt=50000.0,
             design_speed_kn=12.0,
             base_fuel_per_km=0.05,
@@ -91,6 +93,8 @@ class TestIceClassCostConstraints:
         vessel = VesselProfile(
             key="test",
             name="Test Vessel",
+            vessel_type=VesselType.PANAMAX,
+            ice_class=IceClass.FSICR_1A,
             dwt=50000.0,
             design_speed_kn=12.0,
             base_fuel_per_km=0.05,
@@ -136,6 +140,8 @@ class TestIceClassCostConstraints:
         vessel = VesselProfile(
             key="test",
             name="Test Vessel",
+            vessel_type=VesselType.PANAMAX,
+            ice_class=IceClass.FSICR_1A,
             dwt=50000.0,
             design_speed_kn=12.0,
             base_fuel_per_km=0.05,
@@ -186,6 +192,8 @@ class TestIceClassCostConstraints:
         vessel = VesselProfile(
             key="test",
             name="Test Vessel",
+            vessel_type=VesselType.PANAMAX,
+            ice_class=IceClass.FSICR_1A,
             dwt=50000.0,
             design_speed_kn=12.0,
             base_fuel_per_km=0.05,
@@ -220,6 +228,8 @@ class TestIceClassCostConstraints:
         vessel = VesselProfile(
             key="test",
             name="Test Vessel",
+            vessel_type=VesselType.PANAMAX,
+            ice_class=IceClass.FSICR_1A,
             dwt=50000.0,
             design_speed_kn=12.0,
             base_fuel_per_km=0.05,
@@ -254,6 +264,8 @@ class TestIceClassCostConstraints:
         vessel = VesselProfile(
             key="test",
             name="Test Vessel",
+            vessel_type=VesselType.PANAMAX,
+            ice_class=IceClass.FSICR_1A,
             dwt=50000.0,
             design_speed_kn=12.0,
             base_fuel_per_km=0.05,
@@ -298,6 +310,8 @@ class TestIceClassCostConstraints:
         vessel = VesselProfile(
             key="test",
             name="Test Vessel",
+            vessel_type=VesselType.PANAMAX,
+            ice_class=IceClass.FSICR_1A,
             dwt=50000.0,
             design_speed_kn=12.0,
             base_fuel_per_km=0.05,
@@ -329,6 +343,8 @@ class TestIceClassCostConstraints:
         weak_vessel = VesselProfile(
             key="weak",
             name="Weak Vessel",
+            vessel_type=VesselType.HANDYSIZE,
+            ice_class=IceClass.FSICR_1C,
             dwt=30000.0,
             design_speed_kn=13.0,
             base_fuel_per_km=0.035,
@@ -340,6 +356,8 @@ class TestIceClassCostConstraints:
         strong_vessel = VesselProfile(
             key="strong",
             name="Strong Vessel",
+            vessel_type=VesselType.PANAMAX,
+            ice_class=IceClass.POLAR_PC7,
             dwt=50000.0,
             design_speed_kn=12.0,
             base_fuel_per_km=0.060,
@@ -382,6 +400,8 @@ class TestIceClassCostConstraints:
         # 成本应该只受 sic 影响，不受冰厚影响
         # 所有海洋格点应该是有限值
         assert np.all(np.isfinite(cost_field.cost[~land_mask]))
+
+
 
 
 

@@ -10,6 +10,7 @@ from arcticroute.core.ais_ingest import inspect_ais_csv, build_ais_density_for_g
 from arcticroute.core.grid import make_demo_grid
 from arcticroute.core.cost import build_cost_from_real_env
 from arcticroute.core.env_real import RealEnvLayers
+from tests.helpers.requirements import data_root
 
 
 def get_real_ais_csv_path() -> str:
@@ -17,11 +18,13 @@ def get_real_ais_csv_path() -> str:
     return str(Path(__file__).resolve().parents[1] / "data_real" / "ais" / "raw" / "ais_2024_sample.csv")
 
 
+@pytest.mark.requires_data
 def test_ais_phase1_complete_workflow():
     """测试完整的 AIS Phase 1 工作流程。"""
     # Step 0: 检查 AIS 数据文件
     ais_csv_path = get_real_ais_csv_path()
-    assert Path(ais_csv_path).exists(), f"AIS CSV 文件不存在：{ais_csv_path}"
+    if not Path(ais_csv_path).exists():
+        pytest.skip(f"requires external data: set ARCTICROUTE_DATA_ROOT (missing {ais_csv_path})")
     
     # Step 1: 探测 AIS schema
     summary = inspect_ais_csv(ais_csv_path, sample_n=100)
@@ -138,6 +141,8 @@ def test_ais_phase1_with_real_data():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
 
 
 

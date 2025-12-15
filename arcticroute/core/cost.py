@@ -21,6 +21,12 @@ import xarray as xr
 from .grid import Grid2D
 from .env_real import RealEnvLayers, load_real_env_for_grid
 from .eco.vessel_profiles import VesselProfile
+from .ais_density_select import (
+    scan_ais_density_candidates,
+    select_best_candidate,
+    load_and_align_density,
+    compute_grid_signature as compute_grid_signature_new,
+)
 
 # 可选依赖：miles-guess 后端检测
 try:
@@ -475,13 +481,22 @@ def _load_normalized_ais_density(
                     print(f"[AIS] warning: failed to cache resampled density: {e}")
     else:
         try:
-            if hasattr(density, "shape") and density.shape == grid.shape():
-                aligned = np.asarray(density, dtype=float)
-        except Exception:
+            # 处理 numpy 数组或其他数组类型
+            arr = np.asarray(density, dtype=float)
+            if arr.shape == grid.shape():
+                aligned = arr
+            else:
+                # 形状不匹配，尝试重采样
+                # 如果是 numpy 数组，无法重采样（缺少坐标信息）
+                if warn_if_missing:
+                    print(f"[AIS] numpy array shape {arr.shape} != grid shape {grid.shape()}, skipping AIS cost")
+                aligned = None
+        except Exception as e:
+            print(f"[AIS] warning: failed to process density array: {e}")
             aligned = None
 
     if aligned is None:
-        if warn_if_missing:
+        if warn_if_missing and density is not None:
             _warn_ais_once("[AIS] density shape mismatch -> auto-resample failed -> skipped AIS cost")
         return None
 
@@ -1007,11 +1022,13 @@ def build_demo_cost(
 
     if ais_norm is not None:
         if w_corridor > 0:
-            corridor_cost = 1.0 - np.sqrt(np.clip(ais_norm, 0.0, 1.0))
-            corridor_cost = np.clip(corridor_cost, 0.0, 1.0)
-            corridor_cost = w_corridor * np.where(land_mask, np.inf, corridor_cost)
-            cost = cost + corridor_cost
-            components["ais_corridor"] = corridor_cost
+            # 走廊奖励：高密度区域成本更低
+            # corridor_reward = w * sqrt(density)，高密度时更大
+            corridor_reward = w_corridor * np.sqrt(np.clip(ais_norm, 0.0, 1.0))
+            # components 记录奖励值（高密度时大），在陆地上置 0
+            components["ais_corridor"] = np.where(land_mask, 0.0, corridor_reward)
+            # 从总成本减去奖励（即高密度时总成本更低）
+            cost = cost - components["ais_corridor"]
 
         if w_congestion > 0:
             ocean_mask = (~land_mask) & np.isfinite(ais_norm)
@@ -1063,6 +1080,7 @@ def build_cost_from_real_env(
     sic_exp: float | None = None,
     wave_exp: float | None = None,
     scenario_name: str | None = None,
+    rules_config_path: str | None = None,
 ) -> CostField:
     """
     使用真实环境场（sic + wave_swh + ice_thickness_m）构建成本场。
@@ -1137,6 +1155,7 @@ def build_cost_from_real_env(
         sic_exp: 海冰浓度指数（可选，覆盖默认值 1.5）
         wave_exp: 波浪高度指数（可选，覆盖默认值 1.5）
         scenario_name: 场景名称（可选，用于从配置读取默认指数参数）
+        rules_config_path: 极地规则配置文件路径（可选，若提供则应用硬约束禁行 mask）
 
     Returns:
         CostField 对象，包含 components 分解
@@ -1557,15 +1576,18 @@ def build_cost_from_real_env(
             )
 
         if w_corridor > 0:
-            corridor_cost = 1.0 - np.sqrt(np.clip(ais_norm, 0.0, 1.0))
-            corridor_cost = np.clip(corridor_cost, 0.0, 1.0)
-            corridor_cost = w_corridor * np.where(land_mask, np.inf, corridor_cost)
-            cost = cost + corridor_cost
-            components["ais_corridor"] = corridor_cost
+            # 走廊作为“奖励”：高密度区域降低成本
+            # 走廊奖励：高密度区域成本更低
+            # corridor_reward = w * sqrt(density)，高密度时更大
+            corridor_reward = w_corridor * np.sqrt(np.clip(ais_norm, 0.0, 1.0))
+            # components 记录奖励值（高密度时大），在陆地上置 0
+            components["ais_corridor"] = np.where(land_mask, 0.0, corridor_reward)
+            # 从总成本减去奖励（即高密度时总成本更低）
+            cost = cost - components["ais_corridor"]
             print(
-                f"[COST] AIS corridor bonus applied: "
+                f"[COST] AIS corridor cost applied: "
                 f"w_ais_corridor={w_corridor:.3f}, "
-                f"corridor_range=[{corridor_cost.min():.3f}, {corridor_cost.max():.3f}]"
+                f"corridor_range=[{components['ais_corridor'].min():.3f}, {components['ais_corridor'].max():.3f}]"
             )
 
         if w_congestion > 0:
@@ -1587,6 +1609,53 @@ def build_cost_from_real_env(
                 f"penalty_range=[{congestion_cost.min():.3f}, {congestion_cost.max():.3f}]"
             )
 
+    # ========================================================================
+    # Phase 6: 应用极地规则（硬约束）
+    # ========================================================================
+    rules_meta = {}
+    if rules_config_path is not None:
+        try:
+            from .constraints.polar_rules import (
+                load_polar_rules_config,
+                apply_hard_constraints,
+                integrate_hard_constraints_into_cost,
+            )
+            
+            # 加载规则配置
+            rules_cfg = load_polar_rules_config(rules_config_path)
+            
+            # 构建环境字典用于规则应用
+            env_for_rules = {
+                "landmask": land_mask.astype(int),
+                "sic": env.sic if env.sic is not None else None,
+                "wave": env.wave_swh if env.wave_swh is not None else None,
+                "ice_thickness": env.ice_thickness_m if env.ice_thickness_m is not None else None,
+            }
+            
+            # 应用硬约束
+            blocked_mask, rules_meta = apply_hard_constraints(
+                env_for_rules,
+                vessel_profile.to_dict() if vessel_profile is not None else None,
+                rules_cfg,
+            )
+            
+            # 将禁行 mask 集成到成本场
+            if np.any(blocked_mask):
+                cost = integrate_hard_constraints_into_cost(
+                    cost,
+                    blocked_mask,
+                    blocked_value=1e10,
+                )
+                components["rules_blocked"] = blocked_mask.astype(float)
+                print(
+                    f"[COST] polar rules applied: "
+                    f"blocked_fraction={rules_meta.get('blocked_fraction', 0.0):.4f}, "
+                    f"rules={rules_meta.get('rules_applied', [])}"
+                )
+        except Exception as e:
+            logger.warning(f"[COST] failed to apply polar rules: {e}")
+            rules_meta = {"error": str(e)}
+
     # 构造元数据
     # 记录指数来源
     sic_power_source = "fitted" if ym and sic_exp is not None else "default"
@@ -1598,6 +1667,7 @@ def build_cost_from_real_env(
         "wave_power_effective": wave_exp,
         "sic_power_source": sic_power_source,
         "wave_power_source": wave_power_source,
+        "rules": rules_meta,
     }
     
     return CostField(

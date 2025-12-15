@@ -281,6 +281,8 @@ def load_real_grid_from_nc(
 
 def load_grid_with_landmask(
     prefer_real: bool = True,
+    explicit_landmask_path: Optional[str] = None,
+    landmask_search_dirs: Optional[list[str]] = None,
 ) -> tuple[Grid2D, np.ndarray, dict]:
     """
     加载网格与 land_mask。
@@ -288,21 +290,78 @@ def load_grid_with_landmask(
     - 若 prefer_real=True 且成功从 land_mask_gebco.nc 读取，则返回真实网格；
     - 否则退回合成 demo grid。
 
+    新增参数支持更灵活的 landmask 加载策略。
+
     Args:
         prefer_real: 是否优先加载真实数据
+        explicit_landmask_path: 显式指定的 landmask 文件路径
+        landmask_search_dirs: landmask 搜索目录列表
 
     Returns:
         (grid, land_mask, meta) 元组，其中 meta 包含：
           - "source": "real" / "demo"
           - "data_root": str(data_root)
+          - "landmask_path": 加载的 landmask 文件路径
+          - "landmask_resampled": 是否进行了重采样
+          - "landmask_land_fraction": 陆地比例
+          - "landmask_note": 诊断信息或回退原因
     """
+    # 首先加载网格
     if prefer_real:
         real = load_real_grid_from_landmask()
         if real is not None:
-            grid, land_mask = real
-            meta = {"source": "real", "data_root": str(get_data_root())}
-            return grid, land_mask, meta
+            grid, land_mask_old = real
+            grid_source = "real"
+        else:
+            grid, land_mask_old = make_demo_grid()
+            grid_source = "demo"
+    else:
+        grid, land_mask_old = make_demo_grid()
+        grid_source = "demo"
 
-    grid, land_mask = make_demo_grid()
-    meta = {"source": "demo", "data_root": str(get_data_root())}
-    return grid, land_mask, meta
+    # 然后加载 landmask（使用新的统一接口）
+    try:
+        from .landmask_select import load_and_align_landmask, scan_landmask_candidates, select_best_candidate, compute_grid_signature
+        
+        candidates = scan_landmask_candidates(search_dirs=landmask_search_dirs)
+        target_sig = compute_grid_signature(grid)
+        best_candidate = select_best_candidate(
+            candidates, target_signature=target_sig, prefer_path=explicit_landmask_path
+        )
+        
+        if best_candidate is not None:
+            land_mask, landmask_meta = load_and_align_landmask(best_candidate, grid, method="nearest")
+            if land_mask is not None:
+                # 成功加载真实 landmask
+                meta = {
+                    "source": grid_source,
+                    "data_root": str(get_data_root()),
+                    "landmask_path": landmask_meta.get("source_path"),
+                    "landmask_resampled": landmask_meta.get("resampled", False),
+                    "landmask_land_fraction": landmask_meta.get("land_fraction"),
+                    "landmask_note": "successfully loaded real landmask",
+                }
+                return grid, land_mask, meta
+        
+        # 未找到或加载失败，使用旧的 land_mask
+        meta = {
+            "source": grid_source,
+            "data_root": str(get_data_root()),
+            "landmask_path": "fallback (old method)",
+            "landmask_resampled": False,
+            "landmask_land_fraction": float(land_mask_old.sum()) / land_mask_old.size if land_mask_old.size > 0 else 0.0,
+            "landmask_note": "using fallback landmask from old method",
+        }
+        return grid, land_mask_old, meta
+    
+    except Exception as e:
+        # 异常时回退到旧方法
+        meta = {
+            "source": grid_source,
+            "data_root": str(get_data_root()),
+            "landmask_path": "fallback (error)",
+            "landmask_resampled": False,
+            "landmask_land_fraction": float(land_mask_old.sum()) / land_mask_old.size if land_mask_old.size > 0 else 0.0,
+            "landmask_note": f"error in new landmask loading: {str(e)[:100]}",
+        }
+        return grid, land_mask_old, meta

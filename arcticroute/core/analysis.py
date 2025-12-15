@@ -12,8 +12,14 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from .cost import CostField
 from .grid import Grid2D
+
+# 延迟导入 CostField 以避免循环导入
+try:
+    from .cost import CostField
+except ImportError:
+    # 如果导入失败，定义一个占位符
+    CostField = None
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

@@ -46,6 +46,33 @@ from arcticroute.config import EDL_MODES, list_edl_modes
 from arcticroute.core.scenarios import load_all_scenarios
 from scripts.export_defense_bundle import build_defense_bundle
 
+# 导入 AIS Density 面板组件
+from arcticroute.ui.ais_density_panel import render_ais_density_panel, render_ais_density_summary
+
+# 导入 POLARIS 诊断模块
+try:
+    from arcticroute.ui.polaris_diagnostics import (
+        extract_route_diagnostics,
+        compute_route_statistics,
+        format_diagnostics_summary,
+        aggregate_route_by_segment,
+    )
+    POLARIS_DIAGNOSTICS_AVAILABLE = True
+except ImportError:
+    POLARIS_DIAGNOSTICS_AVAILABLE = False
+
+# 导入 CMEMS 面板组件
+try:
+    from arcticroute.ui.cmems_panel import (
+        render_env_source_selector,
+        render_cmems_panel,
+        render_manual_nc_selector,
+        get_env_source_config,
+    )
+    CMEMS_PANEL_AVAILABLE = True
+except ImportError:
+    CMEMS_PANEL_AVAILABLE = False
+
 # 导入 Pipeline Timeline 组件
 from arcticroute.ui.components import (
     Pipeline,
@@ -311,6 +338,9 @@ def plan_three_routes(
     w_ais_corridor: float = 0.0,
     w_ais_congestion: float = 0.0,
     w_ais: float | None = None,
+    planner_kernel: str = "A*",
+    polarroute_vessel_mesh_path: str | None = None,
+    polarroute_route_config_path: str | None = None,
 ) -> tuple[dict[str, RouteInfo], dict, dict, dict, str]:
     """
     规划三条路线：efficient / edl_safe / edl_robust（使用 ROUTE_PROFILES 定义的个性化权重）。
@@ -452,15 +482,69 @@ def plan_three_routes(
             )
             cost_fields[profile_key] = cost_field
         
-        # 规划路线
-        path = plan_route_latlon(
-            cost_field,
-            start_lat,
-            start_lon,
-            end_lat,
-            end_lon,
-            neighbor8=allow_diag,
-        )
+        # 规划路线（支持多种规划内核）
+        path = None
+        planner_error = None
+        
+        if planner_kernel == "PolarRoute (external mesh)" and polarroute_vessel_mesh_path and polarroute_route_config_path:
+            # Phase 5A：使用 PolarRoute 外部文件模式
+            try:
+                from arcticroute.core.planners.polarroute_backend import PolarRouteBackend
+                
+                pr_backend = PolarRouteBackend(
+                    vessel_mesh_path=polarroute_vessel_mesh_path,
+                    route_config_path=polarroute_route_config_path,
+                )
+                path = pr_backend.plan(
+                    (start_lat, start_lon),
+                    (end_lat, end_lon),
+                )
+            except Exception as e:
+                planner_error = str(e)
+                print(f"[WARN] PolarRoute (external mesh) 规划失败，回退到 A*: {e}")
+                # 回退到 A*
+                path = plan_route_latlon(
+                    cost_field,
+                    start_lat,
+                    start_lon,
+                    end_lat,
+                    end_lon,
+                    neighbor8=allow_diag,
+                )
+        elif planner_kernel == "PolarRoute (pipeline dir)" and st.session_state.get("polarroute_pipeline_dir"):
+            # Phase 5B：使用 PolarRoute Pipeline 模式
+            try:
+                from arcticroute.core.planners.polarroute_backend import PolarRouteBackend
+                
+                pr_backend = PolarRouteBackend(
+                    pipeline_dir=st.session_state.get("polarroute_pipeline_dir"),
+                )
+                path = pr_backend.plan(
+                    (start_lat, start_lon),
+                    (end_lat, end_lon),
+                )
+            except Exception as e:
+                planner_error = str(e)
+                print(f"[WARN] PolarRoute (pipeline dir) 规划失败，回退到 A*: {e}")
+                # 回退到 A*
+                path = plan_route_latlon(
+                    cost_field,
+                    start_lat,
+                    start_lon,
+                    end_lat,
+                    end_lon,
+                    neighbor8=allow_diag,
+                )
+        else:
+            # 使用 A* 后端（默认）
+            path = plan_route_latlon(
+                cost_field,
+                start_lat,
+                start_lon,
+                end_lat,
+                end_lon,
+                neighbor8=allow_diag,
+            )
         
         # 构造 RouteInfo
         if path:
@@ -734,6 +818,16 @@ def render() -> None:
             print(f"[UI] warning: failed to compute grid signature: {e}")
             st.session_state["grid_signature"] = None
 
+        # Landmask 文件输入（可选）
+        st.subheader("陆地掩码 (可选)")
+        explicit_landmask_path = st.text_input(
+            "Landmask 文件路径 (可选)",
+            value=st.session_state.get("explicit_landmask_path", ""),
+            placeholder="例: data_real/landmask/land_mask.nc",
+            help="若指定，将优先使用该文件；否则自动扫描候选目录。",
+        )
+        st.session_state["explicit_landmask_path"] = explicit_landmask_path
+        
         cost_mode_options = ["demo_icebelt", "real_sic_if_available"]
         cost_mode_default = "real_sic_if_available" if grid_mode == "real" else "demo_icebelt"
         cost_mode = st.selectbox(
@@ -1053,6 +1147,155 @@ def render() -> None:
         selected_vessel = vessel_profiles[selected_vessel_key]
         
         # ====================================================================
+        # Phase 5A + 5B：规划内核选择 (A* / PolarRoute external / PolarRoute pipeline)
+        # ====================================================================
+        st.subheader("规划内核")
+        planner_kernel_options = [
+            "A*",
+            "PolarRoute (external mesh)",
+            "PolarRoute (pipeline dir)"
+        ]
+        planner_kernel_default = st.session_state.get("planner_kernel", "A*")
+        if planner_kernel_default not in planner_kernel_options:
+            planner_kernel_default = "A*"
+        
+        selected_planner_kernel = st.selectbox(
+            "选择规划内核",
+            options=planner_kernel_options,
+            index=planner_kernel_options.index(planner_kernel_default),
+            help="A*: 使用内置 A* 算法 | PolarRoute: 调用外部 PolarRoute CLI（需要预先安装）",
+        )
+        st.session_state["planner_kernel"] = selected_planner_kernel
+        
+        # 检查 PolarRoute 可用性（对两种 PolarRoute 模式都需要）
+        polarroute_available = False
+        try:
+            import shutil
+            polarroute_available = shutil.which("optimise_routes") is not None
+        except:
+            polarroute_available = False
+        
+        # Phase 5A：外部文件模式
+        if selected_planner_kernel == "PolarRoute (external mesh)":
+            st.warning(
+                "⚠️ PolarRoute (external mesh) 模式需要外部 vessel_mesh.json 和 route_config.json 文件。"
+                "请确保 PolarRoute 已安装：`pip install polar-route`"
+            )
+            
+            if not polarroute_available:
+                st.error(
+                    "❌ PolarRoute 不可用。请先安装：\n"
+                    "`pip install polar-route`\n\n"
+                    "或运行医生脚本检查：\n"
+                    "`python -m scripts.polarroute_pipeline_doctor`"
+                )
+                selected_planner_kernel = "A*"
+                st.session_state["planner_kernel"] = "A*"
+            else:
+                st.success("✓ PolarRoute 已安装")
+                
+                vessel_mesh_path = st.text_input(
+                    "vessel_mesh.json 路径",
+                    value=st.session_state.get("polarroute_vessel_mesh_path", ""),
+                    placeholder="例: data_sample/polarroute/vessel_mesh_empty.json",
+                    help="PolarRoute 的船舶网格配置文件",
+                )
+                st.session_state["polarroute_vessel_mesh_path"] = vessel_mesh_path
+                
+                route_config_path = st.text_input(
+                    "route_config.json 路径",
+                    value=st.session_state.get("polarroute_route_config_path", ""),
+                    placeholder="例: data_sample/polarroute/config_empty.json",
+                    help="PolarRoute 的路由配置文件",
+                )
+                st.session_state["polarroute_route_config_path"] = route_config_path
+        
+        # Phase 5B：Pipeline 目录模式
+        elif selected_planner_kernel == "PolarRoute (pipeline dir)":
+            st.warning(
+                "⚠️ PolarRoute (pipeline dir) 模式从 PolarRoute-pipeline 目录自动查找最新的 vessel_mesh.json。"
+                "请确保 PolarRoute 已安装：`pip install polar-route`"
+            )
+            
+            if not polarroute_available:
+                st.error(
+                    "❌ PolarRoute 不可用。请先安装：\n"
+                    "`pip install polar-route`\n\n"
+                    "或运行医生脚本检查：\n"
+                    "`python -m scripts.polarroute_pipeline_doctor`"
+                )
+                selected_planner_kernel = "A*"
+                st.session_state["planner_kernel"] = "A*"
+            else:
+                st.success("✓ PolarRoute 已安装")
+                
+                pipeline_dir = st.text_input(
+                    "Pipeline 目录",
+                    value=st.session_state.get("polarroute_pipeline_dir", ""),
+                    placeholder="例: D:\\polarroute-pipeline 或 /path/to/pipeline",
+                    help="PolarRoute-pipeline 目录路径。系统将自动从 outputs/push/upload 中查找最新的 vessel_mesh.json",
+                )
+                st.session_state["polarroute_pipeline_dir"] = pipeline_dir
+                
+                # 显示 Status 和 Execute 按钮
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    if st.button("📊 Status", key="pipeline_status_btn"):
+                        if pipeline_dir:
+                            from arcticroute.integrations.polarroute_pipeline import pipeline_status
+                            success, output = pipeline_status(pipeline_dir, short=True)
+                            if success:
+                                st.success("✓ Pipeline Status")
+                                st.code(output, language="text")
+                            else:
+                                st.error("✗ Pipeline Status 失败")
+                                st.code(output, language="text")
+                        else:
+                            st.warning("请先输入 Pipeline 目录")
+                
+                with col2:
+                    if st.button("⚡ Execute", key="pipeline_execute_btn"):
+                        if pipeline_dir:
+                            from arcticroute.integrations.polarroute_pipeline import pipeline_execute
+                            with st.spinner("执行 pipeline execute...（这可能需要几分钟）"):
+                                success, output = pipeline_execute(pipeline_dir)
+                            if success:
+                                st.success("✓ Pipeline Execute 成功")
+                                st.code(output, language="text")
+                            else:
+                                st.error("✗ Pipeline Execute 失败")
+                                st.code(output, language="text")
+                        else:
+                            st.warning("请先输入 Pipeline 目录")
+                
+                with col3:
+                    if st.button("🔧 Reset", key="pipeline_reset_btn"):
+                        if pipeline_dir:
+                            from arcticroute.integrations.polarroute_pipeline import pipeline_reset
+                            success, output = pipeline_reset(pipeline_dir)
+                            if success:
+                                st.success("✓ Pipeline Reset 成功")
+                                st.code(output, language="text")
+                            else:
+                                st.error("✗ Pipeline Reset 失败")
+                                st.code(output, language="text")
+                        else:
+                            st.warning("请先输入 Pipeline 目录")
+                
+                # 显示最新的 vessel_mesh 路径
+                if pipeline_dir:
+                    try:
+                        from arcticroute.integrations.polarroute_artifacts import find_latest_vessel_mesh
+                        latest_mesh = find_latest_vessel_mesh(pipeline_dir)
+                        if latest_mesh:
+                            st.info(f"✓ 最新 vessel_mesh: {latest_mesh}")
+                        else:
+                            st.warning(f"⚠️ 未找到 vessel_mesh.json。请先执行 pipeline execute")
+                    except Exception as e:
+                        st.error(f"查找 vessel_mesh 失败: {e}")
+        
+        # ====================================================================
         # 任务 C：Health Check - 添加 AIS density grid_signature 验证
         # ====================================================================
         # 构建状态信息，包括 grid_signature 验证
@@ -1093,6 +1336,18 @@ def render() -> None:
         )
         
         st.caption("当前仅支持 demo 风险：高纬冰带成本；真实多模态风险后续接入。")
+        
+        # ====================================================================
+        # Phase 9：CMEMS 近实时数据面板集成
+        # ====================================================================
+        if CMEMS_PANEL_AVAILABLE:
+            with st.expander("☁️ CMEMS 近实时数据 (可选)", expanded=False):
+                env_source = render_env_source_selector()
+                if env_source == "cmems_latest":
+                    render_cmems_panel()
+                elif env_source == "manual_nc":
+                    render_manual_nc_selector()
+                st.session_state["env_source_config"] = get_env_source_config()
         
         do_plan = st.button("规划三条方案", type="primary")
 
@@ -1179,23 +1434,26 @@ def render() -> None:
         # 更新第 2 个节点：加载网格与 landmask
         _update_pipeline_node(1, "running", "正在加载...")
         
+        # 使用统一的加载接口
+        from arcticroute.core.grid import load_grid_with_landmask
+        
+        landmask_meta = {}
         if grid_mode == "real":
-            # 尝试加载真实网格
-            real_grid = load_real_grid_from_nc()
-            if real_grid is not None:
-                grid = real_grid
-                # 尝试加载真实 landmask
-                land_mask = load_real_landmask_from_nc(grid)
-                if land_mask is not None:
+            try:
+                # 尝试加载真实网格与 landmask
+                grid, land_mask, meta = load_grid_with_landmask(
+                    prefer_real=True,
+                    explicit_landmask_path=st.session_state.get("explicit_landmask_path"),
+                    landmask_search_dirs=st.session_state.get("landmask_search_dirs"),
+                )
+                landmask_meta = meta
+                grid_source_label = meta.get("source", "unknown")
+                if meta.get("landmask_path") and "fallback" not in str(meta.get("landmask_path", "")).lower():
                     grid_source_label = "real"
-                else:
-                    # 使用 demo landmask
-                    st.warning("真实 landmask 不可用，使用演示 landmask。")
-                    _, land_mask = make_demo_grid(ny=grid.shape()[0], nx=grid.shape()[1])
+                elif grid_source_label == "real":
                     grid_source_label = "real_grid_demo_landmask"
-            else:
-                # 回退到 demo
-                st.warning("真实网格不可用，使用演示网格。")
+            except Exception as e:
+                st.warning(f"加载真实网格失败: {e}")
                 grid, land_mask = make_demo_grid()
                 grid_source_label = "demo"
         else:
@@ -1345,6 +1603,31 @@ def render() -> None:
 
         # 依赖项提示（便于定位渲染/重采样问题）
         with st.expander("诊断与依赖状态 (可展开)"):
+            # Landmask 诊断信息
+            st.subheader("陆地掩码诊断")
+            if landmask_meta:
+                landmask_path = landmask_meta.get("landmask_path", "unknown")
+                landmask_resampled = landmask_meta.get("landmask_resampled", False)
+                landmask_land_fraction = landmask_meta.get("landmask_land_fraction", None)
+                landmask_note = landmask_meta.get("landmask_note", "")
+                
+                st.caption(f"📍 来源: {landmask_path}")
+                if landmask_resampled:
+                    st.caption("🔄 已进行重采样")
+                if landmask_land_fraction is not None:
+                    st.caption(f"🏔️ 陆地比例: {landmask_land_fraction:.2%}")
+                if landmask_note:
+                    st.caption(f"📝 备注: {landmask_note}")
+                
+                # 如果有回退，显示警告
+                if landmask_meta.get("fallback_demo"):
+                    reason = landmask_meta.get("reason", "未知原因")
+                    st.warning(f"⚠️ 已回退到演示 landmask: {reason}")
+            else:
+                st.info("未加载 landmask 元数据")
+            
+            st.divider()
+            
             # pydeck
             try:
                 import pydeck  # type: ignore
@@ -1391,6 +1674,9 @@ def render() -> None:
             w_ais_corridor=w_ais_corridor,
             w_ais_congestion=w_ais_congestion,
             w_ais=w_ais,
+            planner_kernel=selected_planner_kernel,
+            polarroute_vessel_mesh_path=st.session_state.get("polarroute_vessel_mesh_path"),
+            polarroute_route_config_path=st.session_state.get("polarroute_route_config_path"),
         )
         
         # 完成第 5、6 个节点
@@ -1927,6 +2213,57 @@ def render() -> None:
                 st.info("雷达图维度不足（例如 EDL 未启用或总成本缺失），已隐藏。")
         except Exception as e:
             st.info(f"雷达图绘制失败：{e}")
+
+    # ====================================================================
+    # POLARIS 诊断面板（Phase 10 集成）
+    # ====================================================================
+    if POLARIS_DIAGNOSTICS_AVAILABLE:
+        try:
+            polaris_meta = cost_meta.get("polaris_meta") if isinstance(cost_meta, dict) else None
+            if polaris_meta is not None:
+                with st.expander("🧊 POLARIS 沿程解释（RIO/等级/建议航速）", expanded=False):
+                    # 全局统计
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    with col1:
+                        st.metric("RIO 最小值", f"{polaris_meta.get('rio_min', float('nan')):.1f}" if polaris_meta.get('rio_min') is not None else "N/A")
+                    with col2:
+                        st.metric("RIO 平均值", f"{polaris_meta.get('rio_mean', float('nan')):.1f}" if polaris_meta.get('rio_mean') is not None else "N/A")
+                    with col3:
+                        st.metric("特殊等级比例", f"{polaris_meta.get('special_fraction', 0.0)*100:.1f}%")
+                    with col4:
+                        st.metric("提升等级比例", f"{polaris_meta.get('elevated_fraction', 0.0)*100:.1f}%")
+                    with col5:
+                        st.metric("RIV 表版本", polaris_meta.get('riv_table_used', 'table_1_3'))
+
+                    st.markdown("---")
+
+                    # 沿程表格（如果有路由点）
+                    selected_route = routes_info.get(selected_mode)
+                    if selected_route is not None and selected_route.reachable and selected_route.path_lonlat:
+                        try:
+                            route_points = selected_route.path_lonlat
+                            route_diag = extract_route_diagnostics(route_points, polaris_meta, grid=grid)
+                            if not route_diag.empty:
+                                st.markdown("**沿程 RIO / 操作等级 / 建议航速**")
+                                st.dataframe(route_diag, use_container_width=True)
+                                if len(route_diag) > 10:
+                                    st.markdown("**按区段聚合（每 10 个采样点）**")
+                                    try:
+                                        agg_diag = aggregate_route_by_segment(route_diag, segment_size=10)
+                                        if not agg_diag.empty:
+                                            st.dataframe(agg_diag, use_container_width=True)
+                                    except Exception as e:
+                                        st.warning(f"分段聚合失败：{e}")
+                            else:
+                                st.info("当前路由点无法提取 POLARIS 诊断信息。")
+                        except Exception as e:
+                            st.warning(f"沿程表格生成失败：{e}")
+                    else:
+                        st.info("当前路线不可达或无路由点，无法显示沿程表格。")
+            else:
+                st.info("POLARIS 规则未启用或无诊断数据。")
+        except Exception as e:
+            st.warning(f"POLARIS 诊断面板加载失败：{e}")
 
     tab_cost, tab_profile, tab_edl, tab_ais = st.tabs(
         ["📊 成本分解（balanced/edl_safe）", "📈 沿程剖面", "🧠 EDL 不确定性", "🚢 AIS 拥挤度 & 拥堵"]
@@ -3245,6 +3582,188 @@ def render() -> None:
     else:
         st.warning("⚠️ 当前无可达方案，无法导出结果。")
 
+    # ========================================================================
+    # Pareto 多目标前沿面板（实验功能）
+    # ========================================================================
+    
+    with st.expander("🎯 Pareto 多目标前沿（实验）", expanded=False):
+        st.markdown(
+            "在当前规划网格和成本配置下，生成多个权重组合的候选解，"
+            "计算 Pareto 前沿，支持多维目标权衡分析。"
+        )
+        
+        # 参数配置
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            n_random = st.slider(
+                "随机候选数量",
+                min_value=5,
+                max_value=60,
+                value=20,
+                step=5,
+                help="除了 3 个预设 profile 外，额外生成的随机权重组合数量",
+            )
+        
+        with col2:
+            st.write("**目标维度选择**")
+            include_distance = st.checkbox("距离 (km)", value=True)
+            include_cost = st.checkbox("总成本", value=True)
+            include_edl_risk = st.checkbox("EDL 风险", value=True)
+            include_edl_unc = st.checkbox("EDL 不确定性", value=True)
+        
+        with col3:
+            st.write("**可视化配置**")
+            x_axis = st.selectbox(
+                "X 轴",
+                options=["distance_km", "total_cost", "edl_risk", "edl_uncertainty"],
+                index=0,
+                help="散点图 X 轴指标",
+            )
+            y_axis = st.selectbox(
+                "Y 轴",
+                options=["distance_km", "total_cost", "edl_risk", "edl_uncertainty"],
+                index=1,
+                help="散点图 Y 轴指标",
+            )
+        
+        # 生成 Pareto 前沿按钮
+        if st.button("🚀 生成 Pareto 前沿", key="pareto_generate"):
+            st.info("正在生成 Pareto 前沿，请稍候...")
+            
+            try:
+                from scripts.run_pareto_suite import run_pareto_suite
+                
+                # 运行 Pareto 演示
+                all_solutions, front_solutions = run_pareto_suite(
+                    n_random=n_random,
+                    seed=42,
+                    output_dir="reports",
+                )
+                
+                st.success(f"✅ 生成完成！全部候选: {len(all_solutions)}, Pareto 前沿: {len(front_solutions)}")
+                
+                # 显示 Pareto 前沿表格
+                st.subheader("Pareto 前沿候选")
+                
+                from arcticroute.core.pareto import solutions_to_dataframe
+                
+                front_df = solutions_to_dataframe(front_solutions)
+                st.dataframe(front_df, use_container_width=True)
+                
+                # 散点图：Pareto 前沿
+                st.subheader("多目标散点图")
+                
+                all_df = solutions_to_dataframe(all_solutions)
+                
+                # 标记前沿点
+                front_keys = {sol.key for sol in front_solutions}
+                all_df["is_front"] = all_df["key"].isin(front_keys)
+                
+                try:
+                    import altair as alt
+                    
+                    # 创建散点图
+                    scatter = alt.Chart(all_df).mark_circle(size=100, opacity=0.7).encode(
+                        x=alt.X(f"{x_axis}:Q", title=x_axis),
+                        y=alt.Y(f"{y_axis}:Q", title=y_axis),
+                        color=alt.Color(
+                            "is_front:N",
+                            scale=alt.Scale(domain=[False, True], range=["lightgray", "red"]),
+                            title="Pareto 前沿",
+                        ),
+                        tooltip=["key", x_axis, y_axis, "distance_km", "total_cost"],
+                    )
+                    
+                    st.altair_chart(scatter, use_container_width=True)
+                    
+                except ImportError:
+                    st.warning("Altair 未安装，使用 Streamlit 原生散点图")
+                    
+                    scatter_data = all_df[[x_axis, y_axis, "key", "is_front"]].copy()
+                    scatter_data["color"] = scatter_data["is_front"].map({True: "red", False: "blue"})
+                    
+                    st.scatter_chart(
+                        scatter_data.set_index("key"),
+                        x=x_axis,
+                        y=y_axis,
+                    )
+                
+                # 交互式选择
+                st.subheader("选择候选方案详情")
+                
+                selected_key = st.selectbox(
+                    "选择一条路线查看详情",
+                    options=front_df["key"].tolist(),
+                    help="从 Pareto 前沿中选择一条路线",
+                )
+                
+                if selected_key:
+                    # 查找对应的解
+                    selected_sol = None
+                    for sol in front_solutions:
+                        if sol.key == selected_key:
+                            selected_sol = sol
+                            break
+                    
+                    if selected_sol:
+                        st.write(f"**选中方案: {selected_key}**")
+                        
+                        # 显示指标
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric(
+                                "距离 (km)",
+                                f"{selected_sol.breakdown.s_km[-1] if selected_sol.breakdown.s_km else 0:.1f}",
+                            )
+                        with col2:
+                            st.metric(
+                                "总成本",
+                                f"{selected_sol.breakdown.total_cost:.2f}",
+                            )
+                        with col3:
+                            edl_risk = selected_sol.breakdown.component_totals.get("edl_risk", 0.0)
+                            st.metric("EDL 风险", f"{edl_risk:.2f}")
+                        with col4:
+                            edl_unc = selected_sol.breakdown.component_totals.get("edl_uncertainty_penalty", 0.0)
+                            st.metric("EDL 不确定性", f"{edl_unc:.2f}")
+                        
+                        # 显示路线
+                        if selected_sol.route and len(selected_sol.route) > 0:
+                            st.write("**路线预览（前 5 个点）**")
+                            st.write(selected_sol.route[:5])
+                        
+                        # 显示元数据
+                        if selected_sol.meta:
+                            st.write("**权重配置**")
+                            st.json(selected_sol.meta)
+                
+                # 下载 CSV
+                st.subheader("导出结果")
+                
+                csv_all = all_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="📥 下载全部候选 (CSV)",
+                    data=csv_all,
+                    file_name="pareto_solutions.csv",
+                    mime="text/csv",
+                    key="download_pareto_all",
+                )
+                
+                csv_front = front_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="📥 下载 Pareto 前沿 (CSV)",
+                    data=csv_front,
+                    file_name="pareto_front.csv",
+                    mime="text/csv",
+                    key="download_pareto_front",
+                )
+                
+            except Exception as e:
+                st.error(f"❌ 生成失败: {e}")
+                import traceback
+                st.write(traceback.format_exc())
+    
     # 批量评测结果
     results_tab, = st.tabs(["批量测试结果"])
     with results_tab:
