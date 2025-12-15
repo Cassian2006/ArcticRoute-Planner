@@ -11,9 +11,3 @@ _sys.modules.setdefault("arcticroute", _sys.modules[__name__])
 _sys.modules.setdefault("ArcticRoute", _sys.modules[__name__])
 
 __all__ = ["settings"]
-
-
-
-
-
-
