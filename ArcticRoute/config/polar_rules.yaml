@@ -1,0 +1,58 @@
+# Polar Rules Configuration (v0.1)
+# 
+# 原则：任何进入"禁行/可达性/惩罚"的阈值，都必须对应可追溯来源（标准/论文/权威仓库）。
+# 不写死在代码里；不同船型/冰级可切换；缺失值不崩溃，按 missing_value_policy 处理。
+
+version: 0.1
+notes: >
+  Authoritative thresholds must be filled with cited sources (IMO Polar Code / literature).
+  This file is intentionally conservative: rules can be disabled if values are missing.
+  Missing values will trigger warnings and optionally disable the rule.
+
+global:
+  enabled: true
+  # Policy when a threshold value is missing: "warn_and_disable_rule" or "error"
+  missing_value_policy: "warn_and_disable_rule"
+  # Land is always blocked (hard constraint)
+  land_is_blocked: true
+
+rules:
+  wave:
+    enabled: true
+    description: "Significant wave height (SWH) threshold constraint"
+    # Significant wave height threshold (meters)
+    swh_max_m:
+      default: null  # Must be filled with authoritative source
+      by_vessel_type: {}        # e.g. "PC6": 4.0, "PC7": 3.5
+      by_ice_class: {}          # e.g. "1A": 3.5, "1B": 4.0
+      # source_reference: "IMO Polar Code / Copernicus ERA5 guidance"
+
+  sic:
+    enabled: true
+    description: "Sea ice concentration (SIC) threshold constraint"
+    # Sea ice concentration threshold [0..1]
+    sic_max:
+      default: null  # Must be filled with authoritative source
+      by_vessel_type: {}
+      by_ice_class: {}
+      # source_reference: "IMO Polar Code / literature"
+
+  ice_thickness:
+    enabled: true
+    description: "Ice thickness threshold constraint"
+    # Ice thickness threshold (meters)
+    thickness_max_m:
+      default: null  # Must be filled with authoritative source
+      by_vessel_type: {}
+      by_ice_class: {}
+      # source_reference: "IMO Polar Code / class guidance / literature"
+
+  speed_penalty:
+    enabled: false
+    description: "Optional speed/fuel penalty model (not yet implemented)"
+    # Speed/fuel model parameters
+    model: "placeholder"
+    params: {}
+    # source_reference: "TBD"
+
+

@@ -63,6 +63,14 @@ diagnostics/
 *.h5
 *.hdf5
 
+# CMEMS 缓存与大文件
+data/cmems_cache/
+ArcticRoute/data_processed/newenv/*.nc
+reports/cmems_*_describe.json
+reports/cmems_*_probe.json
+reports/cmems_refresh_last.json
+reports/cmems_resolved.json
+
 # 临时文件
 *.tmp
 *.log

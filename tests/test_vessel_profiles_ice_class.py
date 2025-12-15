@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from arcticroute.core.eco.vessel_profiles import VesselProfile, get_default_profiles
+from arcticroute.core.eco.vessel_profiles import VesselProfile, get_default_profiles, VesselType, IceClass
 
 
 class TestVesselProfileIceCapability:
@@ -19,6 +19,8 @@ class TestVesselProfileIceCapability:
         profile = VesselProfile(
             key="test",
             name="Test Vessel",
+            vessel_type=VesselType.PANAMAX,
+            ice_class=IceClass.FSICR_1A,
             dwt=50000.0,
             design_speed_kn=12.0,
             base_fuel_per_km=0.05,
@@ -36,20 +38,25 @@ class TestVesselProfileIceCapability:
         profile = VesselProfile(
             key="test",
             name="Test Vessel",
+            vessel_type=VesselType.PANAMAX,
+            ice_class=IceClass.FSICR_1A,
             dwt=50000.0,
             design_speed_kn=12.0,
             base_fuel_per_km=0.05,
+            max_ice_thickness_m=0.85,  # FSICR_1A 的 max_ice_thickness_m
         )
 
         # 应该有默认值
-        assert profile.max_ice_thickness_m == 0.7
-        assert profile.ice_margin_factor == 0.9
+        assert profile.max_ice_thickness_m == 0.85
+        assert profile.ice_margin_factor == 0.95  # 默认值
 
     def test_get_effective_max_ice_thickness(self):
         """测试 get_effective_max_ice_thickness 方法。"""
         profile = VesselProfile(
             key="test",
             name="Test Vessel",
+            vessel_type=VesselType.PANAMAX,
+            ice_class=IceClass.POLAR_PC7,
             dwt=50000.0,
             design_speed_kn=12.0,
             base_fuel_per_km=0.05,
@@ -66,6 +73,8 @@ class TestVesselProfileIceCapability:
         profile = VesselProfile(
             key="test",
             name="Test Vessel",
+            vessel_type=VesselType.HANDYSIZE,
+            ice_class=IceClass.NO_ICE_CLASS,
             dwt=50000.0,
             design_speed_kn=12.0,
             base_fuel_per_km=0.05,
@@ -152,6 +161,8 @@ class TestVesselProfileIceCapability:
             assert profile.max_ice_thickness_m > 0, f"{key}: max_ice_thickness_m should be positive"
             assert profile.ice_margin_factor > 0, f"{key}: ice_margin_factor should be positive"
             assert profile.ice_margin_factor <= 1.0, f"{key}: ice_margin_factor should be <= 1.0"
+
+
 
 
 

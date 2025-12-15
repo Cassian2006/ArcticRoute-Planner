@@ -84,7 +84,10 @@ def _find_file_in_candidates(filename: str, candidates: list[Path] | None = None
 
 @dataclass
 class RealEnvLayers:
-    """????????????????????????"""
+    """真实环境数据层
+    
+    包含网格、海冰浓度、波浪、陆地掩码等环境数据。
+    """
 
     grid: Grid2D | None = None
     sic: Optional[np.ndarray] = None
@@ -92,6 +95,89 @@ class RealEnvLayers:
     land_mask: Optional[np.ndarray] = None
     ice_thickness_m: Optional[np.ndarray] = None
     edl_output: Optional[dict] = None
+    
+    @classmethod
+    def from_cmems(
+        cls,
+        grid: Grid2D,
+        land_mask: Optional[np.ndarray] = None,
+        sic_nc: Optional[Path | str] = None,
+        swh_nc: Optional[Path | str] = None,
+        allow_partial: bool = True,
+    ) -> "RealEnvLayers":
+        """
+        从 CMEMS NetCDF 文件创建 RealEnvLayers。
+        
+        Args:
+            grid: 目标网格对象
+            land_mask: 陆地掩码数组（可选）
+            sic_nc: 海冰浓度 NetCDF 文件路径
+            swh_nc: 有效波高 NetCDF 文件路径
+            allow_partial: 是否允许部分数据缺失（True 时缺失数据不会抛出异常）
+        
+        Returns:
+            RealEnvLayers 对象
+        
+        Raises:
+            ValueError: 如果 allow_partial=False 且数据加载失败
+        """
+        from ..io.cmems_loader import load_sic_from_nc, load_swh_from_nc, align_to_grid
+        
+        sic = None
+        swh = None
+        
+        # 加载 SIC 数据
+        if sic_nc is not None:
+            try:
+                sic_data, sic_meta = load_sic_from_nc(sic_nc)
+                # 尝试重采样到目标网格
+                try:
+                    sic = align_to_grid(sic_data, sic_meta, grid)
+                except Exception as e:
+                    print(f"[ENV] warning: failed to align SIC to grid: {e}")
+                    if sic_data.shape == grid.shape():
+                        sic = sic_data
+                    elif not allow_partial:
+                        raise
+            except Exception as e:
+                print(f"[ENV] warning: failed to load SIC from {sic_nc}: {e}")
+                if not allow_partial:
+                    raise
+        
+        # 加载 SWH 数据
+        if swh_nc is not None:
+            try:
+                swh_data, swh_meta = load_swh_from_nc(swh_nc)
+                # 尝试重采样到目标网格
+                try:
+                    swh = align_to_grid(swh_data, swh_meta, grid)
+                except Exception as e:
+                    print(f"[ENV] warning: failed to align SWH to grid: {e}")
+                    if swh_data.shape == grid.shape():
+                        swh = swh_data
+                    elif not allow_partial:
+                        raise
+            except Exception as e:
+                print(f"[ENV] warning: failed to load SWH from {swh_nc}: {e}")
+                if not allow_partial:
+                    raise
+        
+        # 记录加载状态
+        sic_status = "OK" if sic is not None else "None"
+        swh_status = "OK" if swh is not None else "None"
+        land_status = "OK" if land_mask is not None else "None"
+        print(
+            f"[ENV] loaded CMEMS data: sic={sic_status}, swh={swh_status}, land={land_status}"
+        )
+        
+        return cls(
+            grid=grid,
+            sic=sic,
+            wave_swh=swh,
+            land_mask=land_mask,
+            ice_thickness_m=None,
+            edl_output=None,
+        )
 
 
 

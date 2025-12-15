@@ -17,7 +17,8 @@ def test_add_ais_component_prefers_real_file(monkeypatch, tmp_path):
     real_path = tmp_path / "ais_density_2024_real.nc"
     ds.to_netcdf(real_path)
 
-    monkeypatch.setattr("arcticroute.core.cost.AIS_DENSITY_PATH_REAL", real_path)
+    from arcticroute.core import cost as cost_module
+    monkeypatch.setattr(cost_module, "AIS_DENSITY_PATH_REAL", real_path)
 
     base_cost = np.zeros((ny, nx), dtype=float)
     components = {}

@@ -98,8 +98,9 @@ class TestMultiobjectiveProfiles:
             cost_mode="demo_icebelt",
         )
         
-        # 验证所有路线都可达
-        for route in routes_info:
+        # 验证所有路线都可达（routes_info 是字典，不是列表）
+        assert isinstance(routes_info, dict), "routes_info 应该是字典"
+        for key, route in routes_info.items():
             assert route.reachable, f"路线 {route.label} 应该可达"
             assert len(route.coords) > 0, f"路线 {route.label} 应该有坐标"
 
@@ -128,9 +129,12 @@ class TestMultiobjectiveProfiles:
         assert efficient_cost_field is not None
         assert robust_cost_field is not None
         
-        # 计算成本分解
-        efficient_route = routes_info[0]  # 第一个是 efficient
-        robust_route = routes_info[2]  # 第三个是 edl_robust
+        # 计算成本分解（routes_info 是字典）
+        efficient_route = routes_info.get("efficient")
+        robust_route = routes_info.get("edl_robust")
+        
+        assert efficient_route is not None, "efficient 路线应该存在"
+        assert robust_route is not None, "edl_robust 路线应该存在"
         
         if efficient_route.reachable:
             efficient_breakdown = compute_route_cost_breakdown(

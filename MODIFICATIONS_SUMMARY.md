@@ -138,3 +138,9 @@ def validate_and_resample_ais_density(ais_density_da, target_grid):
 5. ⏳ 完成任务 C3（重采样逻辑）
 
 
+
+
+
+
+
+
