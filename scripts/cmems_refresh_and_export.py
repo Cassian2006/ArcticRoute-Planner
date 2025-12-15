@@ -284,11 +284,19 @@ def main():
     # 边界框
     if args.bbox:
         try:
-            parts = [float(x) for x in args.bbox.split(",")]
+            if isinstance(args.bbox, list):
+                if len(args.bbox) == 1 and "," in args.bbox[0]:
+                    parts = [float(x) for x in args.bbox[0].split(",")]
+                elif len(args.bbox) == 4:
+                    parts = [float(x) for x in args.bbox]
+                else:
+                    raise ValueError
+            else:
+                parts = [float(x) for x in str(args.bbox).split(",")]
             assert len(parts) == 4
             args.bbox_min_lon, args.bbox_max_lon, args.bbox_min_lat, args.bbox_max_lat = parts
         except Exception:
-            logger.error(f"--bbox 参数无效：{args.bbox}，应为 minlon,maxlon,minlat,maxlat")
+            logger.error(f"--bbox 参数无效：{args.bbox}，应为 'minlon,maxlon,minlat,maxlat' 或四个独立参数 -40 60 65 85")
             return 1
     bbox = {
         "min_lon": args.bbox_min_lon,
