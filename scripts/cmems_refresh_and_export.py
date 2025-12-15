@@ -202,6 +202,7 @@ def main():
         sic_desc = reports_dir / "cmems_sic_describe.json"
         swh_desc = reports_dir / "cmems_swh_describe.json"
         
+        # 改进：捕获 stdout+stderr 和 exit code
         sic_ok = False
         try:
             res1 = subprocess.run(
@@ -213,18 +214,33 @@ def main():
                     "--return-fields",
                     "all",
                 ],
-                check=True,
                 capture_output=True,
                 text=True,
+                timeout=60,
             )
+            
+            # 记录 exit code
+            sic_exitcode_file = reports_dir / "cmems_sic_describe.exitcode.txt"
+            sic_exitcode_file.write_text(str(res1.returncode), encoding="utf-8")
+            
+            # 记录 stderr（如果有）
+            if res1.stderr:
+                sic_stderr_file = reports_dir / "cmems_sic_describe.stderr.txt"
+                sic_stderr_file.write_text(res1.stderr, encoding="utf-8")
+                logger.warning(f"SIC describe stderr: {res1.stderr[:200]}")
+            
             # 使用安全写入：仅当输出 >= 1000 字节才替换
             if _safe_atomic_write_text(sic_desc, res1.stdout, min_bytes=1000):
-                logger.info(f"SIC describe 已安全写入: {sic_desc}")
+                logger.info(f"SIC describe 已安全写入: {sic_desc} (exit code: {res1.returncode})")
                 sic_ok = True
             else:
-                logger.warning(f"SIC describe 输出过短（<1000字节），保留旧文件: {sic_desc}")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"SIC describe 失败: {e.stderr}")
+                logger.warning(f"SIC describe 输出过短（<1000字节），保留旧文件: {sic_desc} (exit code: {res1.returncode})")
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"SIC describe 超时（60秒）")
+            (reports_dir / "cmems_sic_describe.exitcode.txt").write_text("-1", encoding="utf-8")
+        except Exception as e:
+            logger.error(f"SIC describe 异常: {e}")
+            (reports_dir / "cmems_sic_describe.exitcode.txt").write_text("-2", encoding="utf-8")
         
         swh_ok = False
         try:
@@ -237,22 +253,42 @@ def main():
                     "--return-fields",
                     "all",
                 ],
-                check=True,
                 capture_output=True,
                 text=True,
+                timeout=60,
             )
+            
+            # 记录 exit code
+            swh_exitcode_file = reports_dir / "cmems_swh_describe.exitcode.txt"
+            swh_exitcode_file.write_text(str(res2.returncode), encoding="utf-8")
+            
+            # 记录 stderr（如果有）
+            if res2.stderr:
+                swh_stderr_file = reports_dir / "cmems_swh_describe.stderr.txt"
+                swh_stderr_file.write_text(res2.stderr, encoding="utf-8")
+                logger.warning(f"SWH describe stderr: {res2.stderr[:200]}")
+            
             # 使用安全写入
             if _safe_atomic_write_text(swh_desc, res2.stdout, min_bytes=1000):
-                logger.info(f"SWH describe 已安全写入: {swh_desc}")
+                logger.info(f"SWH describe 已安全写入: {swh_desc} (exit code: {res2.returncode})")
                 swh_ok = True
             else:
-                logger.warning(f"SWH describe 输出过短（<1000字节），保留旧文件: {swh_desc}")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"SWH describe 失败: {e.stderr}")
+                logger.warning(f"SWH describe 输出过短（<1000字节），保留旧文件: {swh_desc} (exit code: {res2.returncode})")
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"SWH describe 超时（60秒）")
+            (reports_dir / "cmems_swh_describe.exitcode.txt").write_text("-1", encoding="utf-8")
+        except Exception as e:
+            logger.error(f"SWH describe 异常: {e}")
+            (reports_dir / "cmems_swh_describe.exitcode.txt").write_text("-2", encoding="utf-8")
         
         # describe-only 模式：如果任何一个失败或输出过短，非零退出
         if not (sic_ok and swh_ok):
             logger.error("describe-only 模式：至少一个 describe 失败或输出过短")
+            logger.info("诊断文件已保存到 reports/ 目录：")
+            logger.info("  - cmems_sic_describe.exitcode.txt")
+            logger.info("  - cmems_sic_describe.stderr.txt (如果有错误)")
+            logger.info("  - cmems_swh_describe.exitcode.txt")
+            logger.info("  - cmems_swh_describe.stderr.txt (如果有错误)")
             return 1
         
         logger.info(f"已安全写入 {sic_desc} 与 {swh_desc}")

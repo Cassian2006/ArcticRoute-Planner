@@ -295,3 +295,172 @@ def align_to_grid(
         logger.warning(f"重采样失败: {e}，返回原始数据")
         return data_2d
 
+
+def load_sic_with_fallback(
+    ym: str,
+    prefer_nextsim: bool = True,
+) -> Tuple[np.ndarray, dict]:
+    """
+    加载 SIC 数据，优先尝试 nextsim HM，失败则回退到观测数据。
+    
+    Phase 10.5 策略：
+    - nextsim HM 作为"可用则优先"的增强数据源
+    - 观测数据作为稳定的主要数据源
+    - 自动 fallback，无需用户干预
+    
+    Args:
+        ym: 年月字符串 (YYYYMM)
+        prefer_nextsim: 是否优先尝试 nextsim（默认 True）
+    
+    Returns:
+        (sic_2d, metadata)
+        metadata 包含 'source' 字段，值为 'nextsim_hm' 或 'cmems_obs-si'
+    
+    Raises:
+        Exception: 如果所有数据源都失败
+    """
+    if prefer_nextsim:
+        try:
+            logger.info(f"尝试加载 nextsim HM 数据 (ym={ym})")
+            sic_2d, meta = load_sic_from_nextsim_hm(ym)
+            meta["source"] = "nextsim_hm"
+            meta["fallback_used"] = False
+            logger.info(f"成功使用 nextsim HM 数据源 (ym={ym})")
+            return sic_2d, meta
+        except Exception as e:
+            logger.warning(f"nextsim HM 加载失败: {e}，回退到观测数据")
+    
+    # 回退到观测数据
+    logger.info(f"加载观测数据 (ym={ym})")
+    sic_2d, meta = load_sic_from_nc_obs(ym)
+    meta["source"] = "cmems_obs-si"
+    meta["fallback_used"] = True if prefer_nextsim else False
+    logger.info(f"使用观测数据源 (ym={ym})")
+    return sic_2d, meta
+
+
+def load_sic_from_nextsim_hm(path_or_ym: str) -> Tuple[np.ndarray, dict]:
+    """
+    从 nextsim HM 数据集加载 SIC 数据。
+    
+    Args:
+        path_or_ym: NetCDF 文件路径或年月字符串 (YYYYMM)
+    
+    Returns:
+        (sic_2d, metadata)
+    
+    Raises:
+        FileNotFoundError: 如果文件不存在
+        ValueError: 如果数据集不包含 SIC 变量
+    """
+    # 如果输入是年月字符串，需要先下载或查找文件
+    # 这里简化为直接加载文件
+    if len(path_or_ym) == 6 and path_or_ym.isdigit():
+        # 假设文件在特定目录
+        path = Path(f"data_real/cmems/nextsim_hm/{path_or_ym}_sic.nc")
+        if not path.exists():
+            raise FileNotFoundError(
+                f"nextsim HM 数据文件不存在: {path}. "
+                "请先运行 cmems_download.py 下载数据。"
+            )
+    else:
+        path = Path(path_or_ym)
+    
+    logger.info(f"加载 nextsim HM SIC 数据: {path}")
+    
+    if xr is None:
+        raise ImportError("需要安装 xarray 来加载 NetCDF 文件: pip install xarray")
+    
+    if not path.exists():
+        raise FileNotFoundError(f"文件不存在: {path}")
+    
+    try:
+        ds = xr.open_dataset(path)
+        
+        # nextsim HM 的 SIC 变量名可能是 'sic' 或 'sea_ice_concentration'
+        sic_var_names = ["sic", "sea_ice_concentration", "ice_conc"]
+        sic_var = None
+        sic_var_name = None
+        
+        for name in sic_var_names:
+            if name in ds.data_vars:
+                sic_var = ds[name]
+                sic_var_name = name
+                break
+        
+        if sic_var is None:
+            available = list(ds.data_vars.keys())
+            raise ValueError(f"未找到 SIC 变量。可用变量: {available}")
+        
+        # 提取数据
+        sic_2d = sic_var.values
+        
+        # 如果是 3D（时间+空间），取最后一个时间步
+        if sic_2d.ndim == 3:
+            logger.info(f"SIC 是 3D 数据，形状 {sic_2d.shape}，取最后一个时间步")
+            sic_2d = sic_2d[-1, :, :]
+        
+        # 规范化到 0-1 范围
+        if sic_2d.max() > 1.5:
+            logger.info("SIC 数据范围 > 1.5，假设为 0-100，转换为 0-1")
+            sic_2d = sic_2d / 100.0
+        
+        # 构建元数据
+        metadata = {
+            "variable": sic_var_name,
+            "shape": sic_2d.shape,
+            "min": float(np.nanmin(sic_2d)),
+            "max": float(np.nanmax(sic_2d)),
+            "dtype": str(sic_2d.dtype),
+            "dataset": "cmems_mod_arc_phy_anfc_nextsim_hm",
+        }
+        
+        # 尝试提取坐标信息
+        if "lon" in ds.coords:
+            metadata["lon"] = ds.coords["lon"].values
+        if "lat" in ds.coords:
+            metadata["lat"] = ds.coords["lat"].values
+        if "longitude" in ds.coords:
+            metadata["lon"] = ds.coords["longitude"].values
+        if "latitude" in ds.coords:
+            metadata["lat"] = ds.coords["latitude"].values
+        
+        # 尝试提取时间信息
+        if "time" in ds.coords:
+            metadata["time"] = str(ds.coords["time"].values[-1])
+        
+        ds.close()
+        
+        logger.info(f"成功加载 nextsim HM SIC 数据，形状: {sic_2d.shape}")
+        return sic_2d, metadata
+    
+    except Exception as e:
+        logger.error(f"加载 nextsim HM SIC 数据失败: {e}")
+        raise
+
+
+def load_sic_from_nc_obs(path_or_ym: str) -> Tuple[np.ndarray, dict]:
+    """
+    从观测数据集加载 SIC 数据（cmems_obs-si）。
+    
+    这是 load_sic_from_nc 的别名，用于明确表示使用观测数据。
+    
+    Args:
+        path_or_ym: NetCDF 文件路径或年月字符串 (YYYYMM)
+    
+    Returns:
+        (sic_2d, metadata)
+    """
+    if len(path_or_ym) == 6 and path_or_ym.isdigit():
+        # 假设文件在特定目录
+        path = Path(f"data_real/cmems/obs-si/{path_or_ym}_sic.nc")
+        if not path.exists():
+            raise FileNotFoundError(
+                f"观测数据文件不存在: {path}. "
+                "请先运行 cmems_download.py 下载数据。"
+            )
+    else:
+        path = path_or_ym
+    
+    return load_sic_from_nc(path)
+

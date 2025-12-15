@@ -55,4 +55,17 @@ rules:
     params: {}
     # source_reference: "TBD"
 
+  polaris:
+    enabled: true
+    description: "POLARIS integration - RIO-based hard block and soft penalty"
+    use_decayed_table: false
+    # hard_block_level: "special" means RIO level == "special" => hard blocked
+    hard_block_level: "special"
+    elevated_penalty:
+      enabled: true
+      # penalty = scale * max(0, -rio) / 10
+      scale: 1.0
+    expose_speed_limit: true
+    # source_reference: "MSC.1/Circ.1519 (POLARIS)"
+
 
