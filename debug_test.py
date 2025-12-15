@@ -60,3 +60,4 @@ print(f"Test passes: {cost_1.cost[i, j] < cost_0.cost[i, j]}")
 if "ais_corridor" in cost_1.components:
     print(f"AIS corridor component at ocean point: {cost_1.components['ais_corridor'][i, j]}")
 
+

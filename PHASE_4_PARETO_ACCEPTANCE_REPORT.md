@@ -180,3 +180,4 @@ solutions, front = run_pareto_suite(n_random=20)
 render_pareto_panel(solutions)
 ```
 
+

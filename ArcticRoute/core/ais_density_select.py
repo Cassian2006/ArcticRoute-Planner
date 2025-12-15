@@ -423,3 +423,4 @@ def compute_grid_signature(grid: Grid2D) -> str:
     signature = f"{ny}x{nx}_{lat_min:.4f}_{lat_max:.4f}_{lon_min:.4f}_{lon_max:.4f}"
     return signature
 
+

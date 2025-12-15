@@ -17,3 +17,4 @@ for i, line in enumerate(lines, start=1):
                 print(f'{j+1:4d}: [encoding error]')
         break
 
+

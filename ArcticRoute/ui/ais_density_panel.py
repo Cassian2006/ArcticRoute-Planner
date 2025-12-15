@@ -335,3 +335,4 @@ def render_ais_density_summary(
                 f"  - NaN 数量: {np.isnan(ais_density_array).sum()}"
             )
 
+

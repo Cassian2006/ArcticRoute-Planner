@@ -38,3 +38,4 @@ def test_pareto_demo_smoke():
     assert "distance_km" in df.columns
     assert "total_cost" in df.columns
 
+

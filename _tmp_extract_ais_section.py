@@ -16,3 +16,4 @@ for i in range(start_line, min(end_line, len(lines))):
     except:
         print(f'{i+1:4d}: [encoding error]')
 
+

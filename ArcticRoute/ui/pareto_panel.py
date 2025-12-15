@@ -61,3 +61,4 @@ def render_pareto_panel(solutions: list[ParetoSolution]):
     st.download_button("下载 pareto_front.csv", data=df_front.to_csv(index=False), file_name="pareto_front.csv", mime="text/csv")
     st.download_button("下载 pareto_solutions.csv", data=df_all.to_csv(index=False), file_name="pareto_solutions.csv", mime="text/csv")
 
+

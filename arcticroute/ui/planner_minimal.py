@@ -49,6 +49,18 @@ from scripts.export_defense_bundle import build_defense_bundle
 # 导入 AIS Density 面板组件
 from arcticroute.ui.ais_density_panel import render_ais_density_panel, render_ais_density_summary
 
+# 导入 CMEMS 面板组件
+try:
+    from arcticroute.ui.cmems_panel import (
+        render_env_source_selector,
+        render_cmems_panel,
+        render_manual_nc_selector,
+        get_env_source_config,
+    )
+    CMEMS_PANEL_AVAILABLE = True
+except ImportError:
+    CMEMS_PANEL_AVAILABLE = False
+
 # 导入 Pipeline Timeline 组件
 from arcticroute.ui.components import (
     Pipeline,
@@ -1312,6 +1324,18 @@ def render() -> None:
         )
         
         st.caption("当前仅支持 demo 风险：高纬冰带成本；真实多模态风险后续接入。")
+        
+        # ====================================================================
+        # Phase 9：CMEMS 近实时数据面板集成
+        # ====================================================================
+        if CMEMS_PANEL_AVAILABLE:
+            with st.expander("☁️ CMEMS 近实时数据 (可选)", expanded=False):
+                env_source = render_env_source_selector()
+                if env_source == "cmems_latest":
+                    render_cmems_panel()
+                elif env_source == "manual_nc":
+                    render_manual_nc_selector()
+                st.session_state["env_source_config"] = get_env_source_config()
         
         do_plan = st.button("规划三条方案", type="primary")
 

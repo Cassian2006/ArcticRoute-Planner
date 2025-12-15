@@ -10,3 +10,4 @@ print("=== AIS 候选项 UI 部分 (844-960) ===")
 for i in range(843, min(960, len(lines))):
     print(f'{i+1:4d}: {lines[i]}', end='')
 
+

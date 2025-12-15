@@ -20,6 +20,9 @@ import numpy as np
 import yaml
 from pathlib import Path
 
+# Optional POLARIS integration
+from arcticroute.core.constraints.polaris import compute_rio_for_cell
+
 logger = logging.getLogger(__name__)
 
 

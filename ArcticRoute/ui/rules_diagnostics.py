@@ -108,3 +108,4 @@ def render_rules_config_input() -> Optional[str]:
     
     return rules_config_path if rules_config_path else None
 
+

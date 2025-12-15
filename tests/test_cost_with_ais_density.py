@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 import xarray as xr
 
-import arcticroute.core.cost as cost_mod
 from arcticroute.core.grid import make_demo_grid
 from arcticroute.core.cost import build_cost_from_real_env, build_demo_cost
 from arcticroute.core.env_real import RealEnvLayers
+from arcticroute.core import cost as cost_mod
 
 
 @pytest.mark.integration
