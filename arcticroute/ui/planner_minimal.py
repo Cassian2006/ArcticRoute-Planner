@@ -49,6 +49,18 @@ from scripts.export_defense_bundle import build_defense_bundle
 # 导入 AIS Density 面板组件
 from arcticroute.ui.ais_density_panel import render_ais_density_panel, render_ais_density_summary
 
+# 导入 POLARIS 诊断模块
+try:
+    from arcticroute.ui.polaris_diagnostics import (
+        extract_route_diagnostics,
+        compute_route_statistics,
+        format_diagnostics_summary,
+        aggregate_route_by_segment,
+    )
+    POLARIS_DIAGNOSTICS_AVAILABLE = True
+except ImportError:
+    POLARIS_DIAGNOSTICS_AVAILABLE = False
+
 # 导入 CMEMS 面板组件
 try:
     from arcticroute.ui.cmems_panel import (
@@ -2201,6 +2213,57 @@ def render() -> None:
                 st.info("雷达图维度不足（例如 EDL 未启用或总成本缺失），已隐藏。")
         except Exception as e:
             st.info(f"雷达图绘制失败：{e}")
+
+    # ====================================================================
+    # POLARIS 诊断面板（Phase 10 集成）
+    # ====================================================================
+    if POLARIS_DIAGNOSTICS_AVAILABLE:
+        try:
+            polaris_meta = cost_meta.get("polaris_meta") if isinstance(cost_meta, dict) else None
+            if polaris_meta is not None:
+                with st.expander("🧊 POLARIS 沿程解释（RIO/等级/建议航速）", expanded=False):
+                    # 全局统计
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    with col1:
+                        st.metric("RIO 最小值", f"{polaris_meta.get('rio_min', float('nan')):.1f}" if polaris_meta.get('rio_min') is not None else "N/A")
+                    with col2:
+                        st.metric("RIO 平均值", f"{polaris_meta.get('rio_mean', float('nan')):.1f}" if polaris_meta.get('rio_mean') is not None else "N/A")
+                    with col3:
+                        st.metric("特殊等级比例", f"{polaris_meta.get('special_fraction', 0.0)*100:.1f}%")
+                    with col4:
+                        st.metric("提升等级比例", f"{polaris_meta.get('elevated_fraction', 0.0)*100:.1f}%")
+                    with col5:
+                        st.metric("RIV 表版本", polaris_meta.get('riv_table_used', 'table_1_3'))
+
+                    st.markdown("---")
+
+                    # 沿程表格（如果有路由点）
+                    selected_route = routes_info.get(selected_mode)
+                    if selected_route is not None and selected_route.reachable and selected_route.path_lonlat:
+                        try:
+                            route_points = selected_route.path_lonlat
+                            route_diag = extract_route_diagnostics(route_points, polaris_meta, grid=grid)
+                            if not route_diag.empty:
+                                st.markdown("**沿程 RIO / 操作等级 / 建议航速**")
+                                st.dataframe(route_diag, use_container_width=True)
+                                if len(route_diag) > 10:
+                                    st.markdown("**按区段聚合（每 10 个采样点）**")
+                                    try:
+                                        agg_diag = aggregate_route_by_segment(route_diag, segment_size=10)
+                                        if not agg_diag.empty:
+                                            st.dataframe(agg_diag, use_container_width=True)
+                                    except Exception as e:
+                                        st.warning(f"分段聚合失败：{e}")
+                            else:
+                                st.info("当前路由点无法提取 POLARIS 诊断信息。")
+                        except Exception as e:
+                            st.warning(f"沿程表格生成失败：{e}")
+                    else:
+                        st.info("当前路线不可达或无路由点，无法显示沿程表格。")
+            else:
+                st.info("POLARIS 规则未启用或无诊断数据。")
+        except Exception as e:
+            st.warning(f"POLARIS 诊断面板加载失败：{e}")
 
     tab_cost, tab_profile, tab_edl, tab_ais = st.tabs(
         ["📊 成本分解（balanced/edl_safe）", "📈 沿程剖面", "🧠 EDL 不确定性", "🚢 AIS 拥挤度 & 拥堵"]
