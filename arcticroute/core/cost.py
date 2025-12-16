@@ -20,7 +20,8 @@ import xarray as xr
 
 from .grid import Grid2D
 from .env_real import RealEnvLayers, load_real_env_for_grid
-from .eco.vessel_profiles import VesselProfile
+# from .eco.vessel_profiles import VesselProfile  # 暂时注释，VesselProfile 类未定义
+# 使用 Any 作为类型提示的替代
 
 # 可选依赖：miles-guess 后端检测
 try:
@@ -1006,6 +1007,9 @@ def build_demo_cost(
         )
 
     if ais_norm is not None:
+        # 始终记录原始 AIS 密度到 components（用于诊断和验证）
+        components["ais_density"] = ais_norm
+        
         if w_corridor > 0:
             corridor_cost = 1.0 - np.sqrt(np.clip(ais_norm, 0.0, 1.0))
             corridor_cost = np.clip(corridor_cost, 0.0, 1.0)
@@ -1029,7 +1033,7 @@ def build_demo_cost(
         if legacy_w_ais > 0:
             legacy_cost = legacy_w_ais * ais_norm
             cost = cost + legacy_cost
-            components["ais_density"] = legacy_cost
+            # 注意：legacy_w_ais 情况下，components["ais_density"] 已在上面设置
 
     return CostField(
         grid=grid,
@@ -1045,7 +1049,7 @@ def build_cost_from_real_env(
     env: RealEnvLayers,
     ice_penalty: float = 4.0,
     wave_penalty: float = 0.0,
-    vessel_profile: VesselProfile | None = None,
+    vessel_profile: Any | None = None,  # VesselProfile 类型暂未定义
     ice_class_soft_weight: float = 3.0,
     ym: str | None = None,
     *,
@@ -1546,10 +1550,12 @@ def build_cost_from_real_env(
         )
 
     if ais_norm is not None:
+        # 始终记录原始 AIS 密度到 components（用于诊断和验证）
+        components["ais_density"] = ais_norm
+        
         if legacy_w_ais > 0:
             ais_cost = legacy_w_ais * ais_norm
             cost = cost + ais_cost
-            components["ais_density"] = ais_cost
             print(
                 f"[COST] AIS legacy cost applied: "
                 f"w_ais={legacy_w_ais:.3f}, "
