@@ -154,3 +154,269 @@ def build_ais_density_da_for_demo_grid(
         attrs={"source": "real_ais"},
     )
     return result
+
+
+@dataclass
+class AISSummary:
+    """AIS CSV 检查摘要。"""
+    path: str
+    num_rows: int
+    columns: list[str]
+    has_mmsi: bool
+    has_lat: bool
+    has_lon: bool
+    has_timestamp: bool
+    lat_min: Optional[float] = None
+    lat_max: Optional[float] = None
+    lon_min: Optional[float] = None
+    lon_max: Optional[float] = None
+    time_min: Optional[str] = None
+    time_max: Optional[str] = None
+
+
+def inspect_ais_csv(csv_path: str | Path, sample_n: Optional[int] = None) -> AISSummary:
+    """
+    检查 AIS CSV 文件的基本信息。
+    
+    Args:
+        csv_path: CSV 文件路径
+        sample_n: 最多读取的行数（None 表示全部）
+    
+    Returns:
+        AISSummary 对象
+    """
+    import csv
+    from datetime import datetime
+    
+    p = Path(csv_path)
+    
+    if not p.exists():
+        return AISSummary(
+            path=str(csv_path),
+            num_rows=0,
+            columns=[],
+            has_mmsi=False,
+            has_lat=False,
+            has_lon=False,
+            has_timestamp=False,
+        )
+    
+    try:
+        with p.open("r", encoding="utf-8", errors="ignore", newline="") as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames or []
+            columns = list(fieldnames)
+            
+            # 检查必需列（大小写不敏感）
+            field_map = {name.lower(): name for name in fieldnames}
+            has_mmsi = "mmsi" in field_map
+            has_lat = "lat" in field_map or "latitude" in field_map
+            has_lon = "lon" in field_map or "longitude" in field_map
+            has_timestamp = "timestamp" in field_map or "time" in field_map
+            
+            # 获取实际列名
+            mmsi_key = field_map.get("mmsi")
+            lat_key = field_map.get("lat") or field_map.get("latitude")
+            lon_key = field_map.get("lon") or field_map.get("longitude")
+            time_key = field_map.get("timestamp") or field_map.get("time")
+            
+            num_rows = 0
+            lat_values = []
+            lon_values = []
+            time_values = []
+            
+            for row in reader:
+                num_rows += 1
+                
+                if has_lat and lat_key:
+                    try:
+                        lat_values.append(float(row[lat_key]))
+                    except (ValueError, KeyError):
+                        pass
+                
+                if has_lon and lon_key:
+                    try:
+                        lon_values.append(float(row[lon_key]))
+                    except (ValueError, KeyError):
+                        pass
+                
+                if has_timestamp and time_key:
+                    try:
+                        time_values.append(row[time_key])
+                    except (ValueError, KeyError):
+                        pass
+                
+                if sample_n is not None and num_rows >= sample_n:
+                    break
+            
+            # 计算范围
+            lat_min = float(np.min(lat_values)) if lat_values else None
+            lat_max = float(np.max(lat_values)) if lat_values else None
+            lon_min = float(np.min(lon_values)) if lon_values else None
+            lon_max = float(np.max(lon_values)) if lon_values else None
+            time_min = min(time_values) if time_values else None
+            time_max = max(time_values) if time_values else None
+            
+            return AISSummary(
+                path=str(csv_path),
+                num_rows=num_rows,
+                columns=columns,
+                has_mmsi=has_mmsi,
+                has_lat=has_lat,
+                has_lon=has_lon,
+                has_timestamp=has_timestamp,
+                lat_min=lat_min,
+                lat_max=lat_max,
+                lon_min=lon_min,
+                lon_max=lon_max,
+                time_min=time_min,
+                time_max=time_max,
+            )
+    except Exception:
+        return AISSummary(
+            path=str(csv_path),
+            num_rows=0,
+            columns=[],
+            has_mmsi=False,
+            has_lat=False,
+            has_lon=False,
+            has_timestamp=False,
+        )
+
+
+def load_ais_from_raw_dir(
+    raw_dir: str | Path,
+    time_min: Optional[object] = None,
+    time_max: Optional[object] = None,
+    prefer_json: bool = False,
+) -> "pd.DataFrame":
+    """
+    从目录加载 AIS 数据（CSV 或 JSON）。
+    
+    Args:
+        raw_dir: 数据目录
+        time_min: 最小时间（可选）
+        time_max: 最大时间（可选）
+        prefer_json: 优先加载 JSON 文件
+    
+    Returns:
+        合并后的 DataFrame
+    """
+    import pandas as pd
+    import json
+    
+    raw_dir = Path(raw_dir)
+    dfs = []
+    
+    if prefer_json:
+        # 优先加载 JSON，如果有 JSON 文件就不加载 CSV
+        for json_file in sorted(raw_dir.glob("*.json")):
+            try:
+                with json_file.open("r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                # 处理嵌套结构：如果是列表且每个元素有 "data" 字段
+                records = []
+                if isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict) and "data" in item:
+                            records.extend(item["data"])
+                        else:
+                            records.append(item)
+                else:
+                    records = [data]
+                
+                if records:
+                    df = pd.DataFrame(records)
+                    dfs.append(df)
+            except Exception:
+                pass
+        
+        # 如果找到了 JSON 文件，就不加载 CSV
+        if dfs:
+            pass  # 已经加载了 JSON
+        else:
+            # 没有 JSON 文件，降级到 CSV
+            for csv_file in sorted(raw_dir.glob("*.csv")):
+                try:
+                    df = pd.read_csv(csv_file)
+                    dfs.append(df)
+                except Exception:
+                    pass
+    else:
+        # 加载 CSV
+        for csv_file in sorted(raw_dir.glob("*.csv")):
+            try:
+                df = pd.read_csv(csv_file)
+                dfs.append(df)
+            except Exception:
+                pass
+    
+    if not dfs:
+        return pd.DataFrame()
+    
+    result = pd.concat(dfs, ignore_index=True)
+    
+    # 标准化列名（大小写不敏感）
+    # 定义列名映射规则
+    col_mapping_rules = {
+        "mmsi": ["mmsi", "MMSI", "Mmsi"],
+        "lat": ["lat", "LAT", "Lat", "latitude", "LATITUDE", "Latitude"],
+        "lon": ["lon", "LON", "Lon", "longitude", "LONGITUDE", "Longitude", "lng", "LNG", "Lng"],
+        "timestamp": ["timestamp", "TIMESTAMP", "Timestamp", "time", "TIME", "Time", "datetime", "DATETIME", "DateTime", "basedatetime", "BASEDATETIME", "BaseDateTime", "basedatetimeutc"],
+        "sog": ["sog", "SOG", "speed", "SPEED", "Speed"],
+        "cog": ["cog", "COG", "Cog"],
+        "nav_status": ["nav_status", "NAV_STATUS", "Nav_Status"],
+    }
+    
+    # 创建映射：对于每个标准列名，找到第一个存在的变体
+    col_map = {}
+    for std_col, variants in col_mapping_rules.items():
+        for variant in variants:
+            if variant in result.columns and variant not in col_map:
+                col_map[variant] = std_col
+    
+    result = result.rename(columns=col_map)
+    
+    # 处理重复的标准列名：合并它们
+    standard_cols = ["mmsi", "lat", "lon", "timestamp", "sog", "cog", "nav_status"]
+    for std_col in standard_cols:
+        # 找出所有名为 std_col 的列的索引
+        col_indices = [i for i, col in enumerate(result.columns) if col == std_col]
+        if len(col_indices) > 1:
+            # 合并这些列：使用 fillna 来填充缺失值
+            # 获取第一列的 Series
+            merged_series = result.iloc[:, col_indices[0]].copy()
+            # 用后续列的值填充缺失值
+            for idx in col_indices[1:]:
+                merged_series = merged_series.fillna(result.iloc[:, idx])
+            
+            # 删除旧列（从后向前删除以保持索引正确）
+            for idx in sorted(col_indices, reverse=True):
+                result = result.iloc[:, [i for i in range(len(result.columns)) if i != idx]]
+            
+            # 添加合并后的列
+            result[std_col] = merged_series
+    
+    # 无论是否过滤，都尝试将 timestamp 解析为 datetime（UTC）
+    if "timestamp" in result.columns:
+        result["timestamp"] = pd.to_datetime(result["timestamp"], utc=True, errors="coerce")
+    
+    # 时间过滤
+    if time_min is not None or time_max is not None:
+        if "timestamp" in result.columns:
+            if time_min is not None:
+                time_min_dt = pd.to_datetime(time_min, utc=True)
+                result = result[result["timestamp"] >= time_min_dt]
+            
+            if time_max is not None:
+                time_max_dt = pd.to_datetime(time_max, utc=True)
+                result = result[result["timestamp"] <= time_max_dt]
+    
+    # 数据清理：移除越界的纬度/经度
+    if "lat" in result.columns:
+        result = result[(result["lat"] >= -90) & (result["lat"] <= 90)]
+    if "lon" in result.columns:
+        result = result[(result["lon"] >= -180) & (result["lon"] <= 180)]
+    
+    return result.reset_index(drop=True)
