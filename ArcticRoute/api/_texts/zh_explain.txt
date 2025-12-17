@@ -1,8 +1,0 @@
-【说明 | 路线规划参数解读】
-- α_ice（冰权重）：范围 0–1。越接近 1，风险评估更依赖环境风险（risk_env）；越接近 0，越重视冰概率（ice_prob）。
-- 风险融合：final_risk = α_ice * risk_env + (1 - α_ice) * ice_prob。
-- 参考流程：先以 α_ice=0.5 作为基线，再使用 batch_alpha_sweep.py 扫描多组权重比较差异。
-- 常见问题：
-  1) 若 ERA5 栅格与 Sentinel-2 Mosaic 分辨率不一致，先使用 io/ 模块中的重采样工具。
-  2) 若 STAC 拉取为空，检查 .env 或系统环境中的 MPC/CDSE 凭据，以及时间、空间范围设置。
-  3) 若 cv_sat 预测器输出全零/NaN，确认输入 Mosaic 是否覆盖目标区域，并查看 logs/ 下的诊断。

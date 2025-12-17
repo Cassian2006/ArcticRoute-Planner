@@ -23,8 +23,8 @@ def test_rasterize_on_real_like_grid():
     density = rasterize_ais_density_to_grid(
         lat_points=lat_points,
         lon_points=lon_points,
-        grid_lat2d=lat2d,
-        grid_lon2d=lon2d,
+        lat2d=lat2d,
+        lon2d=lon2d,
     )
 
     assert density.shape == (ny, nx)
