@@ -94,6 +94,11 @@ def generate_summary(
     output_path: Path,
     polaris_enabled: bool = False,
     env_source: str = "demo",
+    *,
+    env_source_requested: str | None = None,
+    env_source_used: str | None = None,
+    fallback_reason: str | None = None,
+    cmems_newenv_index_path: str | None = None,
 ) -> None:
     """生成总结报告。"""
     lines = [
@@ -106,6 +111,10 @@ def generate_summary(
         f"End: {path[-1] if path else 'N/A'}",
         "",
         f"Environment source: {env_source}",
+        f"Environment source requested: {env_source_requested}",
+        f"Environment source used: {env_source_used}",
+        f"Fallback reason: {fallback_reason}",
+        f"CMEMS newenv index: {cmems_newenv_index_path}",
         f"POLARIS enabled: {polaris_enabled}",
         "",
         "CMEMS Strategy:",
@@ -142,6 +151,10 @@ def main() -> None:
     parser.add_argument("--bbox", nargs=4, type=float, metavar=("LON_MIN", "LON_MAX", "LAT_MIN", "LAT_MAX"), help="Bounding box")
     parser.add_argument("--days", type=int, default=2, help="Number of days for route planning")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    # CMEMS 离线/在线开关（默认离线）
+    parser.add_argument("--cmems-offline", dest="cmems_offline", action="store_true", help="Use CMEMS offline cache-first mode")
+    parser.add_argument("--cmems-online", dest="cmems_offline", action="store_false", help="Allow CMEMS online operations")
+    parser.set_defaults(cmems_offline=True)
     args = parser.parse_args()
     
     # 解析 polaris 开关（互斥）
@@ -163,21 +176,60 @@ def main() -> None:
     print("=" * 60)
     print(f"  env_source: {args.env_source}")
     print(f"  polaris_enabled: {polaris_enabled}")
+    print(f"  cmems_offline: {args.cmems_offline}")
     print(f"  seed: {args.seed}")
     print(f"  days: {args.days}")
     if args.bbox:
         print(f"  bbox: {args.bbox}")
     print("=" * 60)
     
-    # 加载 CMEMS 策略（仅当 env_source=cmems_latest 时）
+    # 记录 CMEMS 离线同步元信息
+    env_source_requested = args.env_source
+    env_source_used = args.env_source
+    fallback_reason = None
+    cmems_newenv_index_path = "reports/cmems_newenv_index.json"
+    
+    # env_source=cmems_latest 时，根据 offline/online 处理
     strategy = None
     if args.env_source == "cmems_latest":
-        print("\n[1/6] Loading CMEMS strategy...")
-        strategy = load_cmems_strategy()
-        if strategy:
-            print(f"  Selected: {strategy.get('selected', 'N/A')}")
+        if args.cmems_offline:
+            print("\n[1/6] CMEMS offline mode: syncing from local cache...")
+            try:
+                try:
+                    from scripts.cmems_newenv_sync import sync_to_newenv  # type: ignore
+                    meta = sync_to_newenv(index_path=cmems_newenv_index_path)
+                    print(f"  [CMEMS] sync meta: ok={meta.get('ok')} reason={meta.get('reason')}")
+                except Exception:
+                    import subprocess, sys as _sys
+                    proc = subprocess.run([
+                        _sys.executable, "-m", "scripts.cmems_newenv_sync", "--index-path", cmems_newenv_index_path
+                    ], capture_output=True, text=True, timeout=120)
+                    meta = {}
+                    if proc.stdout:
+                        try:
+                            meta = json.loads(proc.stdout)
+                        except Exception:
+                            pass
+                    print(f"  [CMEMS] sync via subprocess rc={proc.returncode}")
+                if not meta or not meta.get("ok"):
+                    fallback_reason = "cmems_cache_missing"
+                    env_source_used = "demo"
+                else:
+                    env_source_used = "cmems_latest"
+            except Exception as e:
+                print(f"  [CMEMS] offline sync failed: {e}")
+                fallback_reason = "cmems_cache_missing"
+                env_source_used = "demo"
         else:
-            print("  No strategy found, using demo data fallback")
+            # 在线模式：允许加载策略（不执行网络子集，仅读取已有策略文件）
+            print("\n[1/6] Loading CMEMS strategy (online allowed)...")
+            strategy = load_cmems_strategy()
+            if strategy:
+                print(f"  Selected: {strategy.get('selected', 'N/A')}")
+            else:
+                print("  No strategy found, using demo data fallback")
+                env_source_used = "demo"
+                fallback_reason = "cmems_strategy_missing"
     else:
         print("\n[1/6] Using demo data (env_source=demo)")
     
@@ -209,7 +261,7 @@ def main() -> None:
     print("  [OK] Done")
     
     print("\n[5/6] Generating cost_breakdown.json...")
-    generate_cost_breakdown(path, output_dir / "cost_breakdown.json", polaris_enabled=polaris_enabled, env_source=args.env_source)
+    generate_cost_breakdown(path, output_dir / "cost_breakdown.json", polaris_enabled=polaris_enabled, env_source=env_source_used)
     print("  [OK] Done")
     
     print("\n[6/6] Generating polaris_diagnostics.csv...")
@@ -218,7 +270,17 @@ def main() -> None:
     
     # 生成总结
     print("\nGenerating summary.txt...")
-    generate_summary(path, strategy, output_dir / "summary.txt", polaris_enabled=polaris_enabled, env_source=args.env_source)
+    generate_summary(
+        path,
+        strategy,
+        output_dir / "summary.txt",
+        polaris_enabled=polaris_enabled,
+        env_source=env_source_used,
+        env_source_requested=env_source_requested,
+        env_source_used=env_source_used,
+        fallback_reason=fallback_reason,
+        cmems_newenv_index_path=cmems_newenv_index_path if args.env_source == "cmems_latest" else None,
+    )
     print("  [OK] Done")
     
     print("\n" + "=" * 60)

@@ -148,6 +148,7 @@ def _run_demo_end_to_end(
     bbox: list[float] | None = None,
     days: int = 2,
     seed: int = 42,
+    cmems_offline: bool | None = None,
 ) -> str:
     """
     调用 demo_end_to_end.py 脚本（通过 python -m 方式）。
@@ -171,6 +172,9 @@ def _run_demo_end_to_end(
         
         if bbox:
             cmd.extend(["--bbox"] + [str(x) for x in bbox])
+        # CMEMS 离线/在线
+        if cmems_offline is not None:
+            cmd.append("--cmems-offline" if cmems_offline else "--cmems-online")
         
         result = subprocess.run(
             cmd,
@@ -297,6 +301,7 @@ def main() -> None:
             bbox=args.bbox,
             days=args.days,
             seed=args.seed,
+            cmems_offline=(True if sc.env_source == "cmems_latest" else None),
         )
         print(f"  Status: {status}")
 
