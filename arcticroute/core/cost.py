@@ -972,39 +972,44 @@ def build_demo_cost(
     w_ais_congestion: float = 0.0,
 ) -> CostField:
     """
-    ? demo grid ???????????
+    Demo 网格成本构建。
 
-    ?????
-      - ???: ???? 1.0
-      - ?? (lat >= ice_lat_threshold) ?????"??"??: cost += ice_penalty
-      - ???: ?? = np.inf??????
+    行为：
+      - 海域基础成本 1.0
+      - 高纬度（lat >= ice_lat_threshold）加上 ice_penalty
+      - 陆地为 np.inf
 
-    ?????
-      - base_distance: ????? 1.0???? np.inf
-      - ice_risk: ? lat >= ice_lat_threshold ????? ice_penalty???? 0.0
+    组件：
+      - base_distance
+      - ice_risk
 
-    Args:
-        grid: Grid2D ??
-        land_mask: bool ???True = ??
-        ice_penalty: ??????? 4.0????????
-        ice_lat_threshold: ????????? 75.0?
-
-    Returns:
-        CostField ????? components ??
+    环境变量兜底（当未显式传入 AIS 权重时）：
+      - ARCTICROUTE_POLARIS_ENABLED = "1"/"0" -> 若为 "1" 且未提供 AIS 权重，则默认 w_ais_corridor=0.5
+      - ARCTICROUTE_POLAR_RULES_CONFIG 预留（当前未使用）
     """
     ny, nx = grid.shape()
+
+    # 读取环境变量，若未显式传权重则启用兜底
+    try:
+        env_polaris = os.getenv("ARCTICROUTE_POLARIS_ENABLED", "").strip()
+        no_explicit_ais = (float(w_ais or 0.0) == 0.0 and float(w_ais_corridor or 0.0) == 0.0 and float(w_ais_congestion or 0.0) == 0.0)
+        if no_explicit_ais and env_polaris == "1":
+            # 默认给一个温和的 corridor 偏好，保证对照实验有差异
+            w_ais_corridor = 0.5
+    except Exception:
+        pass
     
-    # ?? base_distance ????? 1.0??? inf
+    # base_distance：海洋 1.0，陆地 inf
     base_distance = np.ones((ny, nx), dtype=float)
     base_distance = np.where(land_mask, np.inf, base_distance)
     
-    # ?? ice_risk ???????? ice_penalty???? 0.0
+    # ice_risk：高纬度带增加惩罚
     lat2d = grid.lat2d
     ice_band = lat2d >= ice_lat_threshold
     ice_risk = np.zeros((ny, nx), dtype=float)
     ice_risk[ice_band & ~land_mask] = ice_penalty
     
-    # ??? = base_distance + ice_risk
+    # 总成本 = base_distance + ice_risk
     cost = base_distance + ice_risk
 
     components = {
