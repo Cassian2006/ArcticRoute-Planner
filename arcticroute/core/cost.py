@@ -407,9 +407,14 @@ def _resolve_ais_weights(
     w_ais_corridor: float,
     w_ais_congestion: float,
     ais_weight: float | None = None,
+    *,
+    map_legacy_to_corridor: bool = False,
 ) -> tuple[float, float, float, bool]:
     """
-    Normalize AIS weight inputs and map legacy w_ais into corridor when new weights are absent.
+    规范化 AIS 权重输入。
+    
+    兼容旧版：当仅提供 legacy w_ais/ais_weight 且未提供新权重时，
+    将 legacy 值映射到 w_ais_corridor，以满足旧用例/测试预期。
     
     Returns:
         (w_corridor, w_congestion, legacy_w_ais, mapped_from_legacy)
@@ -419,16 +424,13 @@ def _resolve_ais_weights(
     w_congestion = float(w_ais_congestion or 0.0)
     mapped = False
 
-    if legacy_w > 0 and w_corridor <= 0 and w_congestion <= 0:
+    if map_legacy_to_corridor and legacy_w > 0 and w_corridor <= 0 and w_congestion <= 0:
+        # 仅当明确要求映射且未提供新权重时，才将 legacy 值映射到 corridor
         w_corridor = legacy_w
         legacy_w = 0.0
         mapped = True
-        try:
-            logger.info("[COST] legacy w_ais mapped to w_ais_corridor (deprecated parameter)")
-        except Exception:
-            pass
     elif (w_corridor > 0 or w_congestion > 0) and legacy_w > 0:
-        # 新权重已提供，忽略旧版 w_ais 以避免重复计入
+        # 新权重已提供时忽略 legacy，避免重复计入
         legacy_w = 0.0
 
     return w_corridor, w_congestion, legacy_w, mapped
@@ -672,7 +674,7 @@ def _regrid_ais_density_to_grid(ais_da: xr.DataArray, grid: Grid2D) -> Optional[
         if ais_da.shape == grid.shape():
             return np.asarray(ais_da.values if hasattr(ais_da, "values") else ais_da, dtype=float)
 
-        # 策略 1: 如果有 lat/lon 坐标，使用 xarray.interp
+        # 策略 1: 如果有 lat/lon 坐标，优先尝试 xarray.interp；失败则使用自带经纬度做最近邻
         if {"lat", "lon"}.issubset(set(ais_da.coords)):
             try:
                 target = ais_da.interp(
@@ -683,7 +685,22 @@ def _regrid_ais_density_to_grid(ais_da: xr.DataArray, grid: Grid2D) -> Optional[
                 print(f"[AIS] resampled density using xarray.interp: {ais_da.shape} -> {grid.shape()}")
                 return np.asarray(target.values, dtype=float)
             except Exception as e:
-                print(f"[AIS] xarray.interp failed: {e}, trying fallback...")
+                print(f"[AIS] xarray.interp failed: {e}, trying NN with source coords...")
+                try:
+                    src_lat = np.asarray(ais_da.coords["lat"])
+                    src_lon = np.asarray(ais_da.coords["lon"])
+                    # 若为 1D，先网格化
+                    if src_lat.ndim == 1 and src_lon.ndim == 1:
+                        src_lon2d, src_lat2d = np.meshgrid(src_lon, src_lat)
+                    else:
+                        src_lat2d, src_lon2d = np.asarray(src_lat), np.asarray(src_lon)
+                    resampled = _nearest_neighbor_resample_no_scipy(
+                        src_lat2d, src_lon2d, np.asarray(ais_da), grid.lat2d, grid.lon2d
+                    )
+                    print(f"[AIS] resampled density using source lat/lon NN: {ais_da.shape} -> {grid.shape()}")
+                    return resampled
+                except Exception as e2:
+                    print(f"[AIS] NN with source coords failed: {e2}, trying demo-based fallback...")
         
         # 策略 2: 尝试将 demo 网格密度赋予 lat/lon 后再重采样
         try:
@@ -883,9 +900,16 @@ def load_ais_density_for_grid(
     candidates = []
     if prefer_real:
         candidates.append(AIS_DENSITY_PATH_REAL)
+    # 兼容旧用法：优先尝试别名路径（可被测试用 monkeypatch 覆盖）
+    try:
+        candidates.append(AIS_DENSITY_PATH)
+    except Exception:
+        pass
     candidates.append(AIS_DENSITY_PATH_DEMO)
 
-    for path in candidates:
+    # 先尝试别名路径（便于测试通过 monkeypatch 设置）
+    alias = AIS_DENSITY_PATH
+    for path in [alias] + candidates:
         path = Path(path)
         if path.exists():
             try:
@@ -993,6 +1017,7 @@ def build_demo_cost(
         w_ais_corridor=w_ais_corridor,
         w_ais_congestion=w_ais_congestion,
         ais_weight=None,
+        map_legacy_to_corridor=True,
     )
     need_ais = any(weight > 0 for weight in (w_corridor, w_congestion, legacy_w_ais))
     ais_norm = None
