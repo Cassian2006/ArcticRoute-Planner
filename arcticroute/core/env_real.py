@@ -382,63 +382,88 @@ def load_real_env_for_grid(
 
     try:
         grid_obj = grid
-        if grid_obj is None or (sic_files or grid_files):
-            grid_source = sic_files[0] if sic_files else grid_files[0]
-            with xr.open_dataset(grid_source, decode_times=False) as ds_grid:
-                lat_da = None
-                for name in ["latitude", "lat", "LAT", "y"]:
-                    if name in ds_grid:
-                        lat_da = ds_grid[name]
-                        break
-                lon_da = None
-                for name in ["longitude", "lon", "LON", "x"]:
-                    if name in ds_grid:
-                        lon_da = ds_grid[name]
-                        break
-                if lat_da is None or lon_da is None:
-                    raise KeyError("latitude/longitude")
-                lat_vals = lat_da.values
-                lon_vals = lon_da.values
-                if lat_vals.ndim == 1 and lon_vals.ndim == 1:
-                    lat2d, lon2d = np.meshgrid(lat_vals, lon_vals, indexing="ij")
-                else:
-                    lat2d, lon2d = lat_vals, lon_vals
-            # 如果已有 grid 但形状不匹配，则改用真实网格
-            if grid_obj is None or grid_obj.shape() != lat2d.shape:
-                grid_obj = Grid2D(lat2d=lat2d, lon2d=lon2d)
+        if grid_obj is None or (sic_files or grid_files or wave_files):
+            # 选择用于推断网格的来源文件：优先 sic，其次 wave，最后独立 grid 文件
+            def _first_existing(paths: list[Path]) -> Path | None:
+                for p in paths:
+                    try:
+                        if Path(p).exists():
+                            return Path(p)
+                    except Exception:
+                        continue
+                return None
+
+            grid_source = (
+                _first_existing(list(sic_files))
+                or _first_existing(list(wave_files))
+                or _first_existing(list(grid_files))
+            )
+
+            if grid_source is not None:
+                with xr.open_dataset(grid_source, decode_times=False) as ds_grid:
+                    lat_da = None
+                    for name in ["latitude", "lat", "LAT", "y"]:
+                        if name in ds_grid:
+                            lat_da = ds_grid[name]
+                            break
+                    lon_da = None
+                    for name in ["longitude", "lon", "LON", "x"]:
+                        if name in ds_grid:
+                            lon_da = ds_grid[name]
+                            break
+                    if lat_da is None or lon_da is None:
+                        # 无有效经纬度，保留现有 grid_obj 或稍后回退
+                        lat2d = lon2d = None
+                    else:
+                        lat_vals = lat_da.values
+                        lon_vals = lon_da.values
+                        if lat_vals.ndim == 1 and lon_vals.ndim == 1:
+                            lat2d, lon2d = np.meshgrid(lat_vals, lon_vals, indexing="ij")
+                        else:
+                            lat2d, lon2d = lat_vals, lon_vals
+                        if grid_obj is None or grid_obj.shape() != lat2d.shape:
+                            grid_obj = Grid2D(lat2d=lat2d, lon2d=lon2d)
+            # 若仍没有 grid_obj，则保留传入的 grid（可能为 None），由后续逻辑决定回退
 
         sic = None
         if sic_files:
             sic_path = sic_files[0]
-            with xr.open_dataset(sic_path, decode_times=False) as ds_sic:
-                sic_da = None
-                for name in ("sic", "SIC", "ice_concentration"):
-                    if name in ds_sic:
-                        sic_da = ds_sic[name]
-                        break
-                if sic_da is None:
-                    raise KeyError("sic variable not found")
-                sic_raw = sic_da.values
-                if sic_raw.ndim == 3:
-                    sic_raw = sic_raw[min(time_index, sic_raw.shape[0] - 1), :, :]
-                sic = np.asarray(sic_raw, dtype=float)
-                if np.nanmax(sic) > 1.5:
-                    sic = sic / 100.0
+            try:
+                with xr.open_dataset(sic_path, decode_times=False) as ds_sic:
+                    sic_da = None
+                    for name in ("sic", "SIC", "ice_concentration"):
+                        if name in ds_sic:
+                            sic_da = ds_sic[name]
+                            break
+                    if sic_da is not None:
+                        sic_raw = sic_da.values
+                        if sic_raw.ndim == 3:
+                            sic_raw = sic_raw[min(time_index, sic_raw.shape[0] - 1), :, :]
+                        sic = np.asarray(sic_raw, dtype=float)
+                        if np.nanmax(sic) > 1.5:
+                            sic = sic / 100.0
+            except Exception:
+                # sic 不可用时保持 None
+                sic = None
 
         wave = None
         if wave_files:
-            wave_path = wave_files[0]
-            with xr.open_dataset(wave_path, decode_times=False) as ds_wave:
-                wave_da = None
-                for name in ("wave_swh", "swh", "SWH"):
-                    if name in ds_wave:
-                        wave_da = ds_wave[name]
-                        break
-                if wave_da is not None:
-                    wave_raw = wave_da.values
-                    if wave_raw.ndim == 3:
-                        wave_raw = wave_raw[min(time_index, wave_raw.shape[0] - 1), :, :]
-                    wave = np.asarray(wave_raw, dtype=float)
+            wave_path = Path(wave_files[0])
+            try:
+                if wave_path.exists():
+                    with xr.open_dataset(wave_path, decode_times=False) as ds_wave:
+                        wave_da = None
+                        for name in ("wave_swh", "swh", "SWH"):
+                            if name in ds_wave:
+                                wave_da = ds_wave[name]
+                                break
+                        if wave_da is not None:
+                            wave_raw = wave_da.values
+                            if wave_raw.ndim == 3:
+                                wave_raw = wave_raw[min(time_index, wave_raw.shape[0] - 1), :, :]
+                            wave = np.asarray(wave_raw, dtype=float)
+            except Exception:
+                wave = None
 
         land_mask = None
         if landmask_files and grid_obj is not None:
@@ -488,6 +513,11 @@ def load_real_env_for_grid(
             except Exception:
                 ice_thickness = None
 
+        # 如果既没有 sic 也没有 wave 数据，则返回 None（符合测试预期）
+        if sic is None and wave is None:
+            print(f"[ENV] no sic/wave available for ym={ym}; returning None")
+            return None
+
         env = RealEnvLayers(
             grid=grid_obj,
             sic=sic,
@@ -512,3 +542,4 @@ def load_real_env_for_grid(
     except Exception as e:
         print(f"[ENV] failed to load real env for ym={ym}: {e}; returning None")
         return None
+
