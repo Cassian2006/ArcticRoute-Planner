@@ -107,5 +107,11 @@ pytest tests/
 待定
 
 ---
-
-**最后更新**：2024-12-14
+Phase 11 简述（<=15 行）
+- nextsim HM 可用则优先；不可用时自动回退 L4 观测/演示，不崩。
+- 一键诊断：PowerShell 运行 scripts/phase91_diagnose_nextsim.ps1。
+- 刷新链：cmems_resolve -> cmems_refresh_and_export -> cmems_newenv_sync。
+- 演示闭环：python -m scripts.demo_end_to_end --outdir reports/demo_run。
+- 诊断汇总：reports/PHASE11_NEXTSIM_DIAG_SUMMARY.txt。
+- 策略结果：reports/cmems_strategy.json（记录回退原因）。
+最后更新：2024-12-18 (Phase 11)
