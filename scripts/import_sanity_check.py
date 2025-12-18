@@ -6,9 +6,17 @@ def main() -> int:
     root = Path(__file__).resolve().parents[1]
 
     offenders = []
-    if (root / "ArcticRoute").exists():
+    # On case-insensitive filesystems (e.g., Windows NTFS),
+    # Path("ArcticRoute").exists() may return True even if the actual directory
+    # is named "arcticroute" (lowercase). To avoid false positives, enumerate
+    # actual entry names and compare case-sensitively.
+    try:
+        entries = {p.name for p in root.iterdir()}
+    except Exception:
+        entries = set()
+    if "ArcticRoute" in entries:
         offenders.append("ArcticRoute/ (uppercase package dir)")
-    if (root / "arcticroute.py").exists():
+    if "arcticroute.py" in entries:
         offenders.append("arcticroute.py (shadowing package)")
 
     if offenders:
