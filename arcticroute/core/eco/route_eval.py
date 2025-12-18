@@ -37,3 +37,5 @@ def eval_route_eco(
         # Using a small default grid size for fallback
         return np.zeros((10, 10), dtype=float)
 
+
+

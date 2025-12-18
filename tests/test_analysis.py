@@ -39,3 +39,8 @@ def test_compute_route_cost_breakdown_simple_route():
     for component_path in breakdown.component_along_path.values():
         assert len(component_path) == len(route)
 
+
+
+
+
+

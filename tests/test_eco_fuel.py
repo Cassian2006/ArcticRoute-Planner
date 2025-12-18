@@ -22,3 +22,8 @@ def test_eco_cost_norm_constant_returns_zero():
     y = eco_cost_norm(x)
     assert np.allclose(y, 0.0)
 
+
+
+
+
+

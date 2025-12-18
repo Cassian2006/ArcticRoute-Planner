@@ -73,3 +73,5 @@ def eco_cost_norm(cost_field: np.ndarray) -> np.ndarray:
     
     return normalized
 
+
+

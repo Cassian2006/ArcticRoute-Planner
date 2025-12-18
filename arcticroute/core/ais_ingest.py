@@ -420,3 +420,8 @@ def load_ais_from_raw_dir(
         result = result[(result["lon"] >= -180) & (result["lon"] <= 180)]
     
     return result.reset_index(drop=True)
+
+
+
+
+
