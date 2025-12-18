@@ -2,7 +2,7 @@ scenarios:
   barents_to_chukchi_edl:
     title: "Barents to Chukchi (EDL-Safe)"
     description: "Long stretch along Russia north coast; contrast EDL-Safe vs Robust."
-    start_lat: 70.8
+    start_lat: 69.0
     start_lon: 33.0
     end_lat: 70.5
     end_lon: 170.0

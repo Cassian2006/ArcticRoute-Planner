@@ -225,8 +225,9 @@ def load_real_grid_from_nc(
         return None
 
     try:
-        lat_candidates = [lat_name, "latitude", "Latitude", "LAT", "y"]
-        lon_candidates = [lon_name, "longitude", "Longitude", "LON", "x"]
+        # 仅接受显式地理坐标变量，不把纯维度索引 y/x 视为地理坐标
+        lat_candidates = [lat_name, "latitude", "Latitude", "LAT", "lat"]
+        lon_candidates = [lon_name, "longitude", "Longitude", "LON", "lon"]
 
         lat_var = None
         for name in lat_candidates:
@@ -297,12 +298,16 @@ def load_grid_with_landmask(
           - "data_root": str(data_root)
     """
     if prefer_real:
-        real = load_real_grid_from_landmask()
-        if real is not None:
-            grid, land_mask = real
-            meta = {"source": "real", "data_root": str(get_data_root())}
-            return grid, land_mask, meta
+        try:
+            real = load_real_grid_from_landmask()
+            if real is not None:
+                grid, land_mask = real
+                meta = {"source": "real", "data_root": str(get_data_root())}
+                return grid, land_mask, meta
+        except Exception as e:
+            print(f"[GRID] Failed to load real grid, falling back to demo. Error: {e}")
 
     grid, land_mask = make_demo_grid()
     meta = {"source": "demo", "data_root": str(get_data_root())}
     return grid, land_mask, meta
+

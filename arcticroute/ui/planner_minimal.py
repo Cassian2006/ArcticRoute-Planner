@@ -452,13 +452,31 @@ def plan_three_routes(
             )
             cost_fields[profile_key] = cost_field
         
+        # 规划前：若起终点在陆地上，吸附到最近海洋格点的中心
+        def _snap_to_ocean(lat: float, lon: float) -> tuple[float, float]:
+            try:
+                lat2d = grid.lat2d
+                lon2d = grid.lon2d
+                mask = ~land_mask  # True = ocean
+                # 计算到所有海洋格点的距离，选最近
+                d2 = (lat2d - lat) ** 2 + (lon2d - lon) ** 2
+                d2 = np.where(mask, d2, np.inf)
+                iy, ix = np.unravel_index(np.argmin(d2), d2.shape)
+                # 返回该格点中心坐标
+                return float(lat2d[iy, ix]), float(lon2d[iy, ix])
+            except Exception:
+                return lat, lon
+
+        start_lat_s, start_lon_s = _snap_to_ocean(start_lat, start_lon)
+        end_lat_s, end_lon_s = _snap_to_ocean(end_lat, end_lon)
+
         # 规划路线
         path = plan_route_latlon(
             cost_field,
-            start_lat,
-            start_lon,
-            end_lat,
-            end_lon,
+            start_lat_s,
+            start_lon_s,
+            end_lat_s,
+            end_lon_s,
             neighbor8=allow_diag,
         )
         
@@ -592,20 +610,28 @@ def plan_three_routes(
     # DEBUG: 打印路线信息，用于诊断路线不显示问题
     # ========================================================================
     print("\n[DEBUG ROUTES] ===== Route Planning Complete =====")
-    for i, (key, r) in enumerate(routes_info.items()):
-        try:
-            coords = r.coords or []
-            print(
-                f"[DEBUG ROUTE] #{i} key={key} label={r.label} reachable={r.reachable} "
-                f"n_points={len(coords)} "
-                f"first={coords[0] if coords else None} "
-                f"last={coords[-1] if coords else None}"
-            )
-        except Exception as e:
-            print(f"[DEBUG ROUTE] #{i} error while inspecting route {getattr(r, 'label', '?')}: {e}")
+    # 组装按定义顺序的列表返回，方便测试使用索引访问
+    routes_list = []
+    for i, profile in enumerate(ROUTE_PROFILES):
+        key = profile["key"]
+        r = routes_info.get(key)
+        if r is not None:
+            routes_list.append(r)
+            try:
+                coords = r.coords or []
+                print(
+                    f"[DEBUG ROUTE] #{i} key={key} label={r.label} reachable={r.reachable} "
+                    f"n_points={len(coords)} "
+                    f"first={coords[0] if coords else None} "
+                    f"last={coords[-1] if coords else None}"
+                )
+            except Exception as e:
+                print(f"[DEBUG ROUTE] #{i} error while inspecting route {getattr(r, 'label', '?')}: {e}")
+        else:
+            print(f"[DEBUG ROUTE] #{i} key={key} missing in routes_info")
     print("[DEBUG ROUTES] ===== End Route Planning =====\n")
     
-    return routes_info, cost_fields, meta, scores_by_key, recommended_key
+    return routes_list, cost_fields, meta, scores_by_key, recommended_key
 
 
 def render() -> None:

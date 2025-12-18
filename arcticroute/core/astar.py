@@ -302,3 +302,8 @@ def plan_route_latlon_with_info(
     g_latlon = (grid.lat2d[goal_ij], grid.lon2d[goal_ij])
 
     return PlanRouteResult(path_latlon, True, None, res.expanded, start_ij, goal_ij, s_latlon, g_latlon)
+
+
+
+
+
