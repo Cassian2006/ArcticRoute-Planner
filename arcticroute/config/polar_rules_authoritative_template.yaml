@@ -1,0 +1,48 @@
+# Authoritative rules template (commit this file)
+# User overrides should go to: user_overrides/polar_rules_overrides.yaml (gitignored)
+meta:
+  ruleset_id: "authoritative-v0"
+  compiled_from: "template+overrides"
+  last_updated: null
+
+sources:
+  # Source registry (fill by human)
+  # - id: IMO_POLAR_CODE_2017
+  #   title: "IMO Polar Code"
+  #   org: "IMO"
+  #   year: 2017
+  #   url: ""
+  #   accessed: ""
+  #   notes: ""
+  items: []
+
+rules:
+  enabled: true
+  missing_value_policy: "warn"   # warn|block|ignore
+
+thresholds:
+  # Example: hard-block ice concentration above some value (placeholder)
+  sea_ice_concentration_hard_block:
+    value: null
+    unit: "fraction"   # 0..1
+    op: ">="
+    source_id: null
+    note: "TODO: fill from authoritative source"
+
+  wave_swh_hard_block:
+    value: null
+    unit: "m"
+    op: ">="
+    source_id: null
+    note: "TODO: fill from authoritative source"
+
+overrides_by_vessel:
+  # Example structure (optional)
+  # PC3:
+  #   sea_ice_concentration_hard_block:
+  #     value: 0.7
+  #     unit: "fraction"
+  #     op: ">="
+  #     source_id: "SOME_PAPER_2020"
+  #     note: "..."
+

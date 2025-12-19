@@ -1,0 +1,7 @@
+# Local overrides (DO NOT COMMIT)
+meta:
+  ruleset_id: "local-overrides"
+
+thresholds: {}
+overrides_by_vessel: {}
+
