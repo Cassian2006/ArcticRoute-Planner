@@ -91,7 +91,70 @@ class RealEnvLayers:
     wave_swh: Optional[np.ndarray] = None
     land_mask: Optional[np.ndarray] = None
     ice_thickness_m: Optional[np.ndarray] = None
+    sit: Optional[np.ndarray] = None
+    ice_u: Optional[np.ndarray] = None
+    ice_v: Optional[np.ndarray] = None
+    ice_drift_speed: Optional[np.ndarray] = None
     edl_output: Optional[dict] = None
+
+    @classmethod
+    def from_cmems(
+        cls,
+        *,
+        grid: Grid2D | None = None,
+        sic_nc: Path | None = None,
+        wave_nc: Path | None = None,
+        swh_nc: Path | None = None,
+        sit_nc: Path | None = None,
+        drift_nc: Path | None = None,
+        allow_partial: bool = True,
+        time_index: int = 0,
+    ) -> Optional["RealEnvLayers"]:
+        """
+        Build RealEnvLayers from CMEMS cache/newenv files.
+
+        allow_partial=True means SIT/Drift can be missing without blocking SIC/Wave.
+        """
+        from ..io.cmems_loader import load_ice_drift_from_nc, load_sit_from_nc
+
+        wave_path = wave_nc if wave_nc is not None else swh_nc
+        env = None
+        if sic_nc is not None or wave_path is not None:
+            env = load_real_env_for_grid(
+                grid=grid,
+                nc_sic_path=sic_nc,
+                nc_wave_path=wave_path,
+                nc_ice_thickness_path=None,
+                time_index=time_index,
+            )
+
+        grid_obj = grid or (env.grid if env is not None else None)
+        if grid_obj is None:
+            grid_obj = _grid_from_nc_path(sic_nc or wave_path or sit_nc or drift_nc)
+
+        sit = None
+        if sit_nc is not None and grid_obj is not None:
+            sit, _ = load_sit_from_nc(sit_nc, grid=grid_obj, time_index=time_index)
+
+        ice_u = ice_v = ice_speed = None
+        if drift_nc is not None and grid_obj is not None:
+            ice_u, ice_v, ice_speed, _ = load_ice_drift_from_nc(
+                drift_nc, grid=grid_obj, time_index=time_index
+            )
+
+        if env is None and not allow_partial:
+            return None
+
+        if env is None and grid_obj is None:
+            return None
+
+        base = env if env is not None else cls(grid=grid_obj)
+        base.grid = grid_obj
+        base.sit = sit
+        base.ice_u = ice_u
+        base.ice_v = ice_v
+        base.ice_drift_speed = ice_speed
+        return base
 
 
 
@@ -543,3 +606,39 @@ def load_real_env_for_grid(
         print(f"[ENV] failed to load real env for ym={ym}: {e}; returning None")
         return None
 
+
+def _grid_from_nc_path(nc_path: Path) -> Grid2D | None:
+    """Try to build Grid2D from a NetCDF file that contains lat/lon coords."""
+    try:
+        import xarray as xr
+    except ImportError:
+        print("[ENV] xarray not available, cannot infer grid")
+        return None
+
+    if nc_path is None or not Path(nc_path).exists():
+        return None
+
+    try:
+        with xr.open_dataset(nc_path, decode_times=False) as ds:
+            lat_da = None
+            for name in ("latitude", "lat", "LAT", "y"):
+                if name in ds.coords or name in ds:
+                    lat_da = ds.coords.get(name) or ds[name]
+                    break
+            lon_da = None
+            for name in ("longitude", "lon", "LON", "x"):
+                if name in ds.coords or name in ds:
+                    lon_da = ds.coords.get(name) or ds[name]
+                    break
+            if lat_da is None or lon_da is None:
+                return None
+            lat_vals = lat_da.values
+            lon_vals = lon_da.values
+            if lat_vals.ndim == 1 and lon_vals.ndim == 1:
+                lat2d, lon2d = np.meshgrid(lat_vals, lon_vals, indexing="ij")
+            else:
+                lat2d, lon2d = np.broadcast_arrays(lat_vals, lon_vals)
+            return Grid2D(lat2d=lat2d, lon2d=lon2d)
+    except Exception as e:
+        print(f"[ENV] failed to infer grid from {nc_path}: {e}")
+        return None

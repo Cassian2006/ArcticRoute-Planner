@@ -1074,6 +1074,8 @@ def build_cost_from_real_env(
     env: RealEnvLayers,
     ice_penalty: float = 4.0,
     wave_penalty: float = 0.0,
+    w_sit: float = 0.0,
+    w_drift: float = 0.0,
     vessel_profile: Any | None = None,  # VesselProfile 类型暂未定义
     ice_class_soft_weight: float = 3.0,
     ym: str | None = None,
@@ -1129,6 +1131,11 @@ def build_cost_from_real_env(
       - corridor（主航线偏好）：cost = w_ais_corridor * (1 - sqrt(d_norm))，高密度更便宜
       - congestion（拥挤惩罚）：计算海域 p90，penalty = ((max(0, d - p90) / max(1e-6, 1-p90))^2)
       - legacy w_ais 会被映射为 corridor 权重（向后兼容），仅当未单独提供新权重时启用
+
+    SIT/Drift 逻辑（仅当 w_sit / w_drift > 0 时启用）：
+      - sit_cost = normalize(max(sit, 0))
+      - drift_cost = normalize(max(speed, 0))
+      - 缺失时输出全 0，并在 meta.warn 中记录原因
 
     返回的 components 至少包含：
       - "base_distance"
@@ -1279,10 +1286,40 @@ def build_cost_from_real_env(
         "base_distance": base_distance,
         "ice_risk": ice_risk,
     }
+    meta_warn = []
     
     # 如果有 wave 分量且 wave_penalty > 0，加入 wave_risk
     if env.wave_swh is not None and wave_penalty > 0:
         components["wave_risk"] = wave_risk
+
+    def _normalize_positive(arr: np.ndarray) -> np.ndarray:
+        arr = np.asarray(arr, dtype=float)
+        arr = np.where(np.isfinite(arr), arr, 0.0)
+        arr = np.maximum(arr, 0.0)
+        max_val = float(np.nanmax(arr)) if arr.size else 0.0
+        if max_val > 0:
+            arr = arr / max_val
+        return np.clip(arr, 0.0, 1.0)
+
+    if w_sit > 0:
+        if env.sit is not None and env.sit.shape == (ny, nx):
+            sit_norm = _normalize_positive(env.sit)
+            sit_cost = w_sit * sit_norm
+        else:
+            sit_cost = np.zeros((ny, nx), dtype=float)
+            meta_warn.append("sit_missing_or_shape_mismatch")
+        components["sit_cost"] = sit_cost
+        cost = cost + sit_cost
+
+    if w_drift > 0:
+        if env.ice_drift_speed is not None and env.ice_drift_speed.shape == (ny, nx):
+            drift_norm = _normalize_positive(env.ice_drift_speed)
+            drift_cost = w_drift * drift_norm
+        else:
+            drift_cost = np.zeros((ny, nx), dtype=float)
+            meta_warn.append("ice_drift_missing_or_shape_mismatch")
+        components["drift_cost"] = drift_cost
+        cost = cost + drift_cost
 
     # 应用冰级约束（仅当 ice_thickness_m 和 vessel_profile 都存在时）
     if env.ice_thickness_m is not None and vessel_profile is not None:
@@ -1629,6 +1666,7 @@ def build_cost_from_real_env(
         "wave_power_effective": wave_exp,
         "sic_power_source": sic_power_source,
         "wave_power_source": wave_power_source,
+        "warn": meta_warn,
     }
     
     return CostField(

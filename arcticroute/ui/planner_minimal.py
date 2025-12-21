@@ -35,7 +35,8 @@ from arcticroute.core.cost import (
     discover_ais_density_candidates,
     compute_grid_signature,
 )
-from arcticroute.core.env_real import load_real_env_for_grid
+from arcticroute.core.config_paths import get_newenv_path
+from arcticroute.core.env_real import RealEnvLayers, load_real_env_for_grid
 from arcticroute.core.astar import plan_route_latlon
 from arcticroute.core.analysis import compute_route_cost_breakdown, compute_route_profile
 from arcticroute.core.eco.vessel_profiles import get_default_profiles, VesselProfile
@@ -357,11 +358,27 @@ def plan_three_routes(
     real_env = None
     if cost_mode == "real_sic_if_available":
         try:
-            real_env = load_real_env_for_grid(grid)
+            newenv_dir = get_newenv_path()
+            sic_nc = newenv_dir / "ice_copernicus_sic.nc"
+            swh_nc = newenv_dir / "wave_swh.nc"
+            sit_nc = newenv_dir / "ice_thickness.nc"
+            drift_nc = newenv_dir / "ice_drift.nc"
+
+            real_env = RealEnvLayers.from_cmems(
+                grid=grid,
+                sic_nc=sic_nc if sic_nc.exists() else None,
+                swh_nc=swh_nc if swh_nc.exists() else None,
+                sit_nc=sit_nc if sit_nc.exists() else None,
+                drift_nc=drift_nc if drift_nc.exists() else None,
+                allow_partial=True,
+            )
             if real_env is not None and (real_env.sic is not None or real_env.wave_swh is not None):
                 meta["real_env_available"] = True
             else:
                 meta["fallback_reason"] = "真实环境数据不可用"
+            if real_env is not None:
+                meta["sit_loaded"] = real_env.sit is not None
+                meta["drift_loaded"] = real_env.ice_drift_speed is not None
         except Exception as e:
             print(f"[WARN] Failed to load real environment data: {e}, falling back to demo cost")
             meta["fallback_reason"] = f"加载真实环境数据失败: {e}"
