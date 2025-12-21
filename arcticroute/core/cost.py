@@ -20,6 +20,8 @@ import xarray as xr
 
 from .grid import Grid2D
 from .env_real import RealEnvLayers, load_real_env_for_grid
+from arcticroute.io.bathymetry_ibcao import load_depth_to_grid
+from arcticroute.io.static_assets import get_static_asset_path
 # from .eco.vessel_profiles import VesselProfile  # 暂时注释，VesselProfile 类未定义
 # 使用 Any 作为类型提示的替代
 
@@ -434,6 +436,55 @@ def _resolve_ais_weights(
         legacy_w = 0.0
 
     return w_corridor, w_congestion, legacy_w, mapped
+
+
+def _apply_shallow_penalty(
+    cost: np.ndarray,
+    components: Dict[str, np.ndarray],
+    grid: Grid2D,
+    *,
+    min_depth_m: float | None,
+    w_shallow: float,
+) -> tuple[np.ndarray, Dict[str, np.ndarray], dict]:
+    meta = {
+        "bathy_loaded": False,
+        "bathy_source": None,
+        "shallow_fraction": None,
+        "warn": [],
+    }
+
+    if min_depth_m is None or w_shallow <= 0:
+        return cost, components, meta
+
+    try:
+        bathy_path = get_static_asset_path("bathymetry_ibcao_v4_200m_nc")
+        if bathy_path is None or not bathy_path.exists():
+            meta["warn"].append("bathymetry asset not found")
+            return cost, components, meta
+
+        depth_grid, depth_meta = load_depth_to_grid(str(bathy_path), grid)
+        meta["bathy_loaded"] = True
+        meta["bathy_source"] = depth_meta.get("source_path", str(bathy_path))
+
+        finite = np.isfinite(depth_grid)
+        if not np.any(finite):
+            meta["warn"].append("bathymetry grid has no finite values")
+            return cost, components, meta
+
+        median_depth = float(np.nanmedian(depth_grid[finite]))
+        if median_depth < 0:
+            shallow = depth_grid > -float(min_depth_m)
+        else:
+            shallow = depth_grid < float(min_depth_m)
+
+        shallow_penalty = shallow.astype(float)
+        components["shallow_penalty"] = shallow_penalty * float(w_shallow)
+        cost = cost + components["shallow_penalty"]
+        meta["shallow_fraction"] = float(np.sum(shallow & finite) / np.sum(finite))
+    except Exception as exc:
+        meta["warn"].append(f"bathy load failed: {exc}")
+
+    return cost, components, meta
 
 
 def _load_normalized_ais_density(
@@ -970,6 +1021,8 @@ def build_demo_cost(
     ais_density_path: Path | str | None = None,
     w_ais_corridor: float = 0.0,
     w_ais_congestion: float = 0.0,
+    min_depth_m: float | None = None,
+    w_shallow: float = 0.0,
 ) -> CostField:
     """
     ? demo grid ???????????
@@ -1060,11 +1113,22 @@ def build_demo_cost(
             cost = cost + legacy_cost
             # 注意：legacy_w_ais 情况下，components["ais_density"] 已在上面设置
 
+    cost, components, shallow_meta = _apply_shallow_penalty(
+        cost,
+        components,
+        grid,
+        min_depth_m=min_depth_m,
+        w_shallow=w_shallow,
+    )
+
+    meta = shallow_meta
+
     return CostField(
         grid=grid,
         cost=cost,
         land_mask=land_mask.astype(bool),
         components=components,
+        meta=meta,
     )
 
 
@@ -1089,6 +1153,8 @@ def build_cost_from_real_env(
     w_ais_corridor: float = 0.0,
     w_ais_congestion: float = 0.0,
     w_ais: float | None = None,
+    min_depth_m: float | None = None,
+    w_shallow: float = 0.0,
     sic_exp: float | None = None,
     wave_exp: float | None = None,
     scenario_name: str | None = None,
@@ -1618,6 +1684,17 @@ def build_cost_from_real_env(
                 f"penalty_range=[{congestion_cost.min():.3f}, {congestion_cost.max():.3f}]"
             )
 
+    # ========================================================================
+    # Step 4: shallow water soft penalty (optional)
+    # ========================================================================
+    cost, components, shallow_meta = _apply_shallow_penalty(
+        cost,
+        components,
+        effective_grid,
+        min_depth_m=min_depth_m,
+        w_shallow=w_shallow,
+    )
+
     # 构造元数据
     # 记录指数来源
     sic_power_source = "fitted" if ym and sic_exp is not None else "default"
@@ -1629,6 +1706,10 @@ def build_cost_from_real_env(
         "wave_power_effective": wave_exp,
         "sic_power_source": sic_power_source,
         "wave_power_source": wave_power_source,
+        "bathy_loaded": shallow_meta.get("bathy_loaded"),
+        "bathy_source": shallow_meta.get("bathy_source"),
+        "shallow_fraction": shallow_meta.get("shallow_fraction"),
+        "warn": shallow_meta.get("warn", []),
     }
     
     return CostField(
