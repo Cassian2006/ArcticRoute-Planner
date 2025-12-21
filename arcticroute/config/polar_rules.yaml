@@ -1,0 +1,31 @@
+polaris:
+  enabled: true
+  use_decayed_table: false
+  hard_block_level: special
+  rio_thresholds:
+    normal_min: 0
+    elevated_min: -10
+    special_lt: -10
+  policy_for_below_pc7_or_no_class:
+    treat_elevated_as_special: true
+  elevated_speed_limits_knots:
+    PC1: 11
+    PC2: 8
+    PC3_PC5: 5
+    BELOW_PC5: 3
+  elevated_penalty:
+    enabled: true
+    scale: 1.0
+  expose_speed_limit: true
+polar_code_definitions:
+  open_water_max_concentration_fraction: 0.1
+  thin_first_year_ice_thickness_m:
+  - 0.3
+  - 0.7
+  medium_first_year_ice_thickness_m:
+  - 0.7
+  - 1.2
+  first_year_ice_thickness_m:
+  - 0.3
+  - 2.0
+
