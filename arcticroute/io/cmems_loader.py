@@ -18,6 +18,9 @@ DRIFT_U_KEYWORDS = (
     "ice_drift_x",
     "drift_x",
     "x_drift",
+    "dx",
+    "dx_mean",
+    "dX_mean",
     "u",
     "u_velocity",
 )
@@ -30,6 +33,9 @@ DRIFT_V_KEYWORDS = (
     "ice_drift_y",
     "drift_y",
     "y_drift",
+    "dy",
+    "dy_mean",
+    "dY_mean",
     "v",
     "v_velocity",
 )
