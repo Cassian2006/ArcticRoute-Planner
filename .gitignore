@@ -54,6 +54,7 @@ outputs/
 logs/
 reports/
 diagnostics/
+data/cmems_cache/
 *.nc
 *.csv
 *.parquet
@@ -73,6 +74,7 @@ ArcticRoute/newDATA_RAW/
 ArcticRoute/diagnostics/
 ArcticRoute/data/
 ArcticRoute/data_processed/
+ArcticRoute/data_processed/newenv/
 ArcticRoute/reports/
 ArcticRoute/ArcticRoute/data_raw/
 ArcticRoute/ArcticRoute/data_processed/

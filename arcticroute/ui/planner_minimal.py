@@ -13,6 +13,7 @@ Phase 3：三方案 demo Planner，支持 efficient / edl_safe / edl_robust 三�
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict
 from pathlib import Path
@@ -40,6 +41,8 @@ from arcticroute.core.astar import plan_route_latlon
 from arcticroute.core.analysis import compute_route_cost_breakdown, compute_route_profile
 from arcticroute.core.eco.vessel_profiles import get_default_profiles, VesselProfile
 from arcticroute.core.eco.eco_model import estimate_route_eco
+from arcticroute.io.geojson_light import read_geojson_lines, read_geojson_points
+from arcticroute.io.static_assets import get_static_asset_path
 
 # 导入共享配置
 from arcticroute.config import EDL_MODES, list_edl_modes
@@ -311,6 +314,8 @@ def plan_three_routes(
     w_ais_corridor: float = 0.0,
     w_ais_congestion: float = 0.0,
     w_ais: float | None = None,
+    min_depth_m: float | None = None,
+    w_shallow: float = 0.0,
 ) -> tuple[dict[str, RouteInfo], dict, dict, dict, str]:
     """
     规划三条路线：efficient / edl_safe / edl_robust（使用 ROUTE_PROFILES 定义的个性化权重）。
@@ -408,6 +413,8 @@ def plan_three_routes(
                         w_ais_corridor=w_ais_corridor,
                         w_ais_congestion=w_ais_congestion,
                         w_ais=w_ais_effective,
+                        min_depth_m=min_depth_m,
+                        w_shallow=w_shallow,
                     )
                 except Exception as e:
                     print(f"[WARN] Failed to build cost from real env for {profile_key}: {e}, falling back to demo cost")
@@ -421,6 +428,8 @@ def plan_three_routes(
                         ais_density_path=ais_density_path,
                         w_ais_corridor=w_ais_corridor,
                         w_ais_congestion=w_ais_congestion,
+                        min_depth_m=min_depth_m,
+                        w_shallow=w_shallow,
                     )
             else:
                 # 回退到 demo 冰带成本（demo 模式下不启用 EDL）
@@ -434,6 +443,8 @@ def plan_three_routes(
                     ais_density_path=ais_density_path,
                     w_ais_corridor=w_ais_corridor,
                     w_ais_congestion=w_ais_congestion,
+                    min_depth_m=min_depth_m,
+                    w_shallow=w_shallow,
                 )
             cost_fields[profile_key] = cost_field
         except Exception as e:
@@ -449,6 +460,8 @@ def plan_three_routes(
                 ais_density_path=ais_density_path,
                 w_ais_corridor=w_ais_corridor,
                 w_ais_congestion=w_ais_congestion,
+                min_depth_m=min_depth_m,
+                w_shallow=w_shallow,
             )
             cost_fields[profile_key] = cost_field
         
@@ -1120,6 +1133,84 @@ def render() -> None:
         
         st.caption("当前仅支持 demo 风险：高纬冰带成本；真实多模态风险后续接入。")
         
+        
+        with st.expander("Ports/Corridors (static layers)", expanded=False):
+            show_ports = st.checkbox("Show ports (WPI)", value=False, key="show_ports_wpi")
+            show_corridors = st.checkbox("Show corridors (reference lines)", value=False, key="show_corridors_ref")
+
+            if show_ports:
+                try:
+                    start_t = time.perf_counter()
+                    ports_path = get_static_asset_path("ports_world_port_index_geojson")
+                    if ports_path is None or not ports_path.exists():
+                        st.warning("Ports GeoJSON not found in manifest.")
+                    else:
+                        ports = read_geojson_points(ports_path)
+                        elapsed_ms = (time.perf_counter() - start_t) * 1000.0
+                        st.write(f"ports_count: {len(ports)}")
+                        st.write(f"read_ms: {elapsed_ms:.1f}")
+                        if ports:
+                            st.dataframe(pd.DataFrame(ports).head(20), width='stretch')
+                except Exception as exc:
+                    st.warning(f"Ports load failed: {exc}")
+
+            if show_corridors:
+                try:
+                    start_t = time.perf_counter()
+                    corridors_path = get_static_asset_path("corridors_shipping_hydrography_geojson")
+                    if corridors_path is None or not corridors_path.exists():
+                        st.warning("Corridors GeoJSON not found in manifest.")
+                    else:
+                        corridors = read_geojson_lines(corridors_path)
+                        elapsed_ms = (time.perf_counter() - start_t) * 1000.0
+                        st.write(f"corridors_count: {len(corridors)}")
+                        st.write(f"read_ms: {elapsed_ms:.1f}")
+                        preview = []
+                        for line in corridors[:5]:
+                            if not line:
+                                continue
+                            start = line[0]
+                            end = line[-1]
+                            preview.append(
+                                {
+                                    "points": len(line),
+                                    "start_lon": start[0],
+                                    "start_lat": start[1],
+                                    "end_lon": end[0],
+                                    "end_lat": end[1],
+                                }
+                            )
+                        if preview:
+                            st.dataframe(pd.DataFrame(preview), width='stretch')
+                except Exception as exc:
+                    st.warning(f"Corridors load failed: {exc}")
+
+        with st.expander("Shallow water penalty", expanded=False):
+            min_depth_raw = st.text_input(
+                "Min depth (m) (empty = off)",
+                value=st.session_state.get("min_depth_m", ""),
+            )
+            st.session_state["min_depth_m"] = min_depth_raw
+            min_depth_m = None
+            if min_depth_raw.strip():
+                try:
+                    min_depth_m = float(min_depth_raw)
+                except ValueError:
+                    st.warning("Min depth must be a number.")
+
+            w_shallow = st.slider(
+                "w_shallow",
+                min_value=0.0,
+                max_value=1.0,
+                value=float(st.session_state.get("w_shallow", 0.0)),
+                step=0.05,
+            )
+            st.session_state["w_shallow"] = w_shallow
+
+            shallow_fraction = st.session_state.get("shallow_fraction")
+            if min_depth_m is not None and w_shallow > 0 and shallow_fraction is not None:
+                st.write(f"shallow_fraction: {shallow_fraction:.3f}")
+
         do_plan = st.button("规划三条方案", type="primary")
 
     # 初始化流动管线相关的 session state
@@ -1417,7 +1508,21 @@ def render() -> None:
             w_ais_corridor=w_ais_corridor,
             w_ais_congestion=w_ais_congestion,
             w_ais=w_ais,
+            min_depth_m=min_depth_m,
+            w_shallow=w_shallow,
         )
+        shallow_fraction = None
+        if cost_fields:
+            for cf in cost_fields.values():
+                if cf is None or not hasattr(cf, "meta"):
+                    continue
+                shallow_fraction = cf.meta.get("shallow_fraction") if cf.meta else None
+                if shallow_fraction is not None:
+                    break
+        if shallow_fraction is not None:
+            st.session_state["shallow_fraction"] = shallow_fraction
+        else:
+            st.session_state.pop("shallow_fraction", None)
         
         # 完成第 5、6 个节点
         _update_pipeline_node(4, "done", "3 种成本场", seconds=0.6)
