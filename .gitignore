@@ -90,3 +90,6 @@ legacy/reports/
 # Environment files
 .env
 .env.local
+
+# Phase14 local overrides
+user_overrides/polar_rules_overrides.yaml
