@@ -92,3 +92,7 @@ legacy/reports/
 # Environment files
 .env
 .env.local
+
+# local static assets manifest (absolute paths)
+arcticroute/config/static_assets.local.json
+

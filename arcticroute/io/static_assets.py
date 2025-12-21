@@ -34,13 +34,13 @@ class StaticAssetRecord:
 
 
 def _load_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def _load_yaml(path: Path) -> Any:
     if yaml is None:
         raise RuntimeError("PyYAML not available")
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+    return yaml.safe_load(path.read_text(encoding="utf-8-sig"))
 
 
 def _read_manifest(path: Path) -> Any:
@@ -66,6 +66,15 @@ def _normalize_assets(data: Any, manifest_path: Path) -> tuple[dict[str, StaticA
     if isinstance(data, dict):
         if "assets" in data and isinstance(data["assets"], list):
             assets = data["assets"]
+        elif "assets" in data and isinstance(data["assets"], dict):
+            assets = []
+            for key, value in data["assets"].items():
+                if isinstance(value, dict):
+                    entry = dict(value)
+                    entry.setdefault("id", key)
+                    assets.append(entry)
+                elif isinstance(value, str):
+                    assets.append({"id": key, "path": value})
         elif "items" in data and isinstance(data["items"], list):
             assets = data["items"]
         elif all(isinstance(v, str) for v in data.values()):
