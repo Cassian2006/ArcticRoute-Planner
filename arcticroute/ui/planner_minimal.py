@@ -38,7 +38,7 @@ from arcticroute.core.cost import (
 from arcticroute.core.env_real import load_real_env_for_grid
 from arcticroute.core.astar import plan_route_latlon
 from arcticroute.core.analysis import compute_route_cost_breakdown, compute_route_profile
-from arcticroute.core.eco.vessel_profiles import get_default_profiles, VesselProfile
+from arcticroute.core.eco.vessel_profiles import get_profile_catalog, VesselProfile
 from arcticroute.core.eco.eco_model import estimate_route_eco
 
 # 导入共享配置
@@ -163,6 +163,37 @@ class RouteInfo:
     def __post_init__(self) -> None:
         # 有同步的调用在开发中依赖 route_info.coords，保留同步输出
         self.coords = self.path_lonlat
+
+
+class RoutesInfo:
+    """Wrap routes dict to provide list-like and dict-like access."""
+
+    def __init__(self, routes_by_key: dict[str, RouteInfo]):
+        self._routes = routes_by_key
+        self._ordered = list(routes_by_key.values())
+
+    def __iter__(self):
+        return iter(self._ordered)
+
+    def __len__(self) -> int:
+        return len(self._ordered)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._ordered[key]
+        return self._routes[key]
+
+    def get(self, key, default=None):
+        return self._routes.get(key, default)
+
+    def keys(self):
+        return self._routes.keys()
+
+    def values(self):
+        return self._routes.values()
+
+    def items(self):
+        return self._routes.items()
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -610,13 +641,11 @@ def plan_three_routes(
     # DEBUG: 打印路线信息，用于诊断路线不显示问题
     # ========================================================================
     print("\n[DEBUG ROUTES] ===== Route Planning Complete =====")
-    # 组装按定义顺序的列表返回，方便测试使用索引访问
-    routes_list = []
+    # 打印路线信息用于调试
     for i, profile in enumerate(ROUTE_PROFILES):
         key = profile["key"]
         r = routes_info.get(key)
         if r is not None:
-            routes_list.append(r)
             try:
                 coords = r.coords or []
                 print(
@@ -631,7 +660,7 @@ def plan_three_routes(
             print(f"[DEBUG ROUTE] #{i} key={key} missing in routes_info")
     print("[DEBUG ROUTES] ===== End Route Planning =====\n")
     
-    return routes_list, cost_fields, meta, scores_by_key, recommended_key
+    return RoutesInfo(routes_info), cost_fields, meta, scores_by_key, recommended_key
 
 
 def render() -> None:
@@ -713,368 +742,55 @@ def render() -> None:
         else:
             st.caption("手动输入起终点和权重参数")
 
-        # ??????????
-        start_lat_default = st.session_state.get("start_lat", 66.0)
-        start_lon_default = st.session_state.get("start_lon", 5.0)
-        end_lat_default = st.session_state.get("end_lat", 78.0)
-        end_lon_default = st.session_state.get("end_lon", 150.0)
-        grid_mode_pref = st.session_state.get("grid_mode_pref", "demo")
-
-        st.subheader("网格模式")
-        grid_mode_options = ["demo", "real"]
-        grid_mode_default = grid_mode_pref if grid_mode_pref in grid_mode_options else "demo"
-        grid_mode = st.radio(
-            "栅格模式",
-            options=grid_mode_options,
-            index=grid_mode_options.index(grid_mode_default),
-            format_func=lambda s: "演示 (demo)" if s == "demo" else "真实数据",
-            horizontal=True,
-        )
-        st.session_state["grid_mode_pref"] = grid_mode
-
-        # ====================================================================
-        # 任务 C：Grid Signature 计算与 Session State 隔离
-        # ====================================================================
-        # 计算当前网格的签名
-        try:
-            if grid_mode == "demo":
-                current_grid, _ = make_demo_grid()
-            else:
-                # 对于真实网格，需要先加载（这里假设已有 ym 参数）
-                ym = st.session_state.get("ym", "202401")
-                current_grid = load_real_grid_from_nc(ym=ym)
-            
-            current_grid_signature = compute_grid_signature(current_grid)
-            
-            # 检查 grid_signature 是否发生变化
-            prev_grid_signature = st.session_state.get("grid_signature", None)
-            if prev_grid_signature != current_grid_signature:
-                # Grid 发生变化，清空 AIS 相关的 session_state
-                st.session_state["grid_signature"] = current_grid_signature
-                st.session_state["ais_density_path_selected"] = None
-                st.session_state["ais_density_cache_key"] = None
-                print(f"[UI] Grid signature changed: {prev_grid_signature} -> {current_grid_signature}")
-            else:
-                st.session_state["grid_signature"] = current_grid_signature
-        except Exception as e:
-            print(f"[UI] warning: failed to compute grid signature: {e}")
-            st.session_state["grid_signature"] = None
-
-        cost_mode_options = ["demo_icebelt", "real_sic_if_available"]
-        cost_mode_default = "real_sic_if_available" if grid_mode == "real" else "demo_icebelt"
-        cost_mode = st.selectbox(
-            "成本模式",
-            options=cost_mode_options,
-            index=cost_mode_options.index(cost_mode_default),
-            format_func=lambda s: "演示成本 (demo_icebelt)" if s == "demo_icebelt" else "真实 SIC / 波浪（可用则启用）",
-        )
-        st.subheader("起点")
-        start_lat = st.number_input(
-            "起点纬度",
-            min_value=60.0,
-            max_value=85.0,
-            value=start_lat_default,
-            step=0.1,
-        )
-        start_lon = st.number_input(
-            "起点经度",
-            min_value=-180.0,
-            max_value=180.0,
-            value=start_lon_default,
-            step=0.1,
-        )
-        
-        st.subheader("终点")
-        end_lat = st.number_input(
-            "终点纬度",
-            min_value=60.0,
-            max_value=85.0,
-            value=end_lat_default,
-            step=0.1,
-        )
-        end_lon = st.number_input(
-            "终点经度",
-            min_value=-180.0,
-            max_value=180.0,
-            value=end_lon_default,
-            step=0.1,
-        )
-        
-        st.subheader("寻路配置")
-        allow_diag = st.checkbox("允许对角线移动 (8 邻接)", value=True)
-        
-        st.subheader("风险权重")
-        wave_penalty = st.slider(
-            "波浪权重 (wave_penalty)",
-            min_value=0.0,
-            max_value=10.0,
-            value=float(st.session_state.get("wave_penalty", 2.0)),
-            step=0.5,
-            help="仅在成本模式为真实环境数据时有影响；若缺少 wave 数据则自动退回为 0。",
-        )
-        st.session_state["wave_penalty"] = wave_penalty
-
-        st.subheader("AIS 成本权重")
-        default_corridor = float(st.session_state.get("w_ais_corridor", 2.0))
-        default_congestion = float(st.session_state.get("w_ais_congestion", 1.0))
-        col_corr, col_cong = st.columns(2)
-        with col_corr:
-            w_ais_corridor = st.slider(
-                "AIS 主航线偏好 (w_corridor)",
-                min_value=0.0,
-                max_value=10.0,
-                value=default_corridor,
-                step=0.5,
-                help="Corridor：越接近高密度主航线，成本越低。",
-            )
-        with col_cong:
-            w_ais_congestion = st.slider(
-                "AIS 拥挤惩罚 (w_congestion)",
-                min_value=0.0,
-                max_value=10.0,
-                value=default_congestion,
-                step=0.5,
-                help="Congestion：仅对密度高分位区域（如 P90+）施加惩罚。",
-            )
-        st.session_state["w_ais_corridor"] = w_ais_corridor
-        st.session_state["w_ais_congestion"] = w_ais_congestion
-        st.caption("Corridor：偏好成熟航道 | Congestion：避开极端拥挤")
-
-        with st.expander("旧版 AIS 权重 (w_ais, deprecated)", expanded=False):
-            w_ais = st.slider(
-                "AIS 旧版权重 w_ais",
-                min_value=0.0,
-                max_value=10.0,
-                value=float(st.session_state.get("w_ais", 0.0)),
-                step=0.1,
-                help="向后兼容参数，若新权重均为 0，会自动映射为 corridor。",
-            )
-            st.caption("建议使用上方 corridor/congestion 权重，新项目不再直接使用 w_ais。")
-        st.session_state["w_ais"] = w_ais
-        ais_weights_enabled = any(weight > 0 for weight in [w_ais, w_ais_corridor, w_ais_congestion])
-
-        # ====================================================================
-        # 任务 C1：网格变化检测 - 自动清空旧 AIS 选择
-        # ====================================================================
-        # 检查网格是否发生变化，若变化则清空 AIS 密度选择以避免维度错配
-        previous_grid_signature = st.session_state.get("previous_grid_signature", None)
-        current_grid_signature = st.session_state.get("grid_signature", None)
-        
-        if (previous_grid_signature is not None and 
-            current_grid_signature is not None and 
-            previous_grid_signature != current_grid_signature):
-            # 网格已切换，清空 AIS 密度选择
-            st.session_state["ais_density_path"] = None
-            st.session_state["ais_density_path_selected"] = None
-            st.session_state["ais_density_cache_key"] = None
-            st.info(f"🔄 网格已切换（{previous_grid_signature[:25]}... → {current_grid_signature[:25]}...），已清空 AIS 密度选择以避免维度错配")
-            print(f"[UI] Grid changed, cleared AIS selection: {previous_grid_signature[:30]}... -> {current_grid_signature[:30]}...")
-        
-        # 更新当前网格 signature
-        if current_grid_signature is not None:
-            st.session_state["previous_grid_signature"] = current_grid_signature
-
-        # ====================================================================
-        # 任务 C1：按 grid_signature 优先选择 AIS 密度文件
-        # ====================================================================
-        # 自动发现 AIS 密度候选文件（按 grid_signature 优先级排序）
-        grid_sig = st.session_state.get("grid_signature", None)
-        ais_candidates = discover_ais_density_candidates(grid_signature=grid_sig)
-        
-        ais_options = ["自动选择 (推荐)"]
-        ais_path_map = {"自动选择 (推荐)": None}
-        ais_match_type_map = {"自动选择 (推荐)": "auto"}
-        
-        for cand in ais_candidates:
-            label = cand["label"]
-            match_type = cand.get("match_type", "generic")
-            
-            # 在标签中显示匹配类型
-            if match_type == "exact":
-                label_with_type = f"{label} ✓ (精确匹配)"
-            elif match_type == "demo":
-                label_with_type = f"{label} (演示)"
-            else:
-                label_with_type = f"{label}"
-            
-            ais_options.append(label_with_type)
-            ais_path_map[label_with_type] = cand["path"]
-            ais_match_type_map[label_with_type] = match_type
-
-        ais_choice = st.selectbox(
-            "AIS 密度数据源 (.nc)",
-            options=ais_options,
-            help="自动：在 data_real/ais/density 与 data_real/ais/derived 中自动选取；也可手动固定某个 .nc 文件。",
+        st.subheader("????")
+        vessel_profiles = get_profile_catalog()
+        all_vessel_keys = sorted(
+            vessel_profiles.keys(),
+            key=lambda k: (
+                vessel_profiles[k].vessel_type.value if vessel_profiles[k].vessel_type else "",
+                vessel_profiles[k].ice_class.value if vessel_profiles[k].ice_class else "",
+                k,
+            ),
         )
 
-        ais_density_path = ais_path_map.get(ais_choice)  # 可能是 None
-        ais_match_type = ais_match_type_map.get(ais_choice, "unknown")
+        search_term = st.text_input(
+            "???? / ??",
+            value=st.session_state.get("vessel_search", ""),
+            placeholder="handy, PC6, tanker...",
+        )
+        st.session_state["vessel_search"] = search_term
 
-        
-
-
-        # ====================================================================
-        # ====================================================================  
-        # 任务 C：AIS 密度数据检查提示 + 重新扫描按钮
-        # ====================================================================  
-        ais_data_available = False
-        if not ais_weights_enabled:
-            st.info("AIS 未启用（corridor/congestion/legacy 权重均为 0）。")
+        if search_term:
+            search_lower = search_term.lower()
+            vessel_keys = [
+                k
+                for k in all_vessel_keys
+                if search_lower in k.lower()
+                or search_lower in (vessel_profiles[k].name or "").lower()
+                or search_lower in (vessel_profiles[k].ice_class_label or "").lower()
+            ]
         else:
-            # 检查 AIS 密度数据是否可用（根据 NC 文件）
-            ais_data_available = False
-            ais_status_text = ""
-            ais_status_color = "gray"
-            ais_file_info = ""
+            vessel_keys = all_vessel_keys
 
-            try:
-                from arcticroute.core import cost as cost_core
-                from pathlib import Path
+        if not vessel_keys:
+            st.warning("?????????????????")
+            vessel_keys = all_vessel_keys
 
-                # 根据网格模式选择优先级
-                prefer_real = (grid_mode == "real")
-                detected_ais_density = cost_core.has_ais_density_data(grid=None, prefer_real=prefer_real)
-
-                if ais_density_path is not None:
-                    ais_data_available = True
-                    # 确保 ais_density_path 是 Path 对象
-                    ais_path_obj = Path(ais_density_path) if isinstance(ais_density_path, str) else ais_density_path
-                    
-                    # 构建详细的状态信息
-                    match_label = ""
-                    if ais_match_type == "exact":
-                        match_label = "[精确匹配]"
-                    elif ais_match_type == "demo":
-                        match_label = "[演示文件]"
-                    else:
-                        match_label = "[通用]"
-                    
-                    ais_file_info = f"{ais_path_obj.name} {match_label}"
-                    ais_status_text = f"✅ AIS density: {ais_file_info}"
-                    ais_status_color = "green"
-                elif detected_ais_density:
-                    ais_data_available = True
-                    ais_status_text = "✅ 已检测到 AIS 拥挤度密度数据（自动选择模式）"
-                    ais_status_color = "green"
-                else:
-                    ais_status_text = "⚠ 未找到匹配当前网格的 AIS density，需启用权重时再检查或运行生成脚本"
-                    ais_status_color = "orange"
-            except Exception as e:
-                ais_status_text = f"⚠ AIS 数据检查失败: {str(e)[:60]}"
-                ais_status_color = "orange"
-
-            # 显示 AIS 状态（左侧栏）
-            st.markdown("**AIS 密度状态**")
-            if ais_status_color == "green":
-                st.success(ais_status_text)
-            elif ais_status_color == "orange":
-                st.warning(ais_status_text)
-            else:
-                st.info(ais_status_text)
-            
-            # 添加重新扫描按钮
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🔄 重新扫描 AIS", key="rescan_ais_btn"):
-                    # 清空 AIS 相关的缓存
-                    st.session_state["ais_density_path_selected"] = None
-                    st.session_state["ais_density_cache_key"] = None
-                    st.rerun()
-            
-            with col2:
-                if st.button("ℹ️ 网格信息", key="grid_info_btn"):
-                    st.info(f"当前网格签名: {st.session_state.get('grid_signature', 'N/A')}")
-
-        
-        # ====================================================================
-        # Phase 4: 规划风格下拉框（统一 EDL 模式）
-        # ====================================================================
-        st.subheader("规划风格")
-        edl_modes = list_edl_modes()
-        selected_edl_mode_default = st.session_state.get("selected_edl_mode", edl_modes[0] if edl_modes else None)
-        if selected_edl_mode_default not in edl_modes:
-            selected_edl_mode_default = edl_modes[0]
-        selected_edl_mode = st.selectbox(
-            "选择规划风格",
-            options=edl_modes,
-            index=edl_modes.index(selected_edl_mode_default),
-            format_func=lambda m: EDL_MODES[m].get("display_name", m),
-            help="选择不同的规划风格会自动调整 EDL 权重、不确定性权重等参数。",
-        )
-        st.session_state["selected_edl_mode"] = selected_edl_mode
-        
-        # 从选定的 EDL 模式获取参数
-        edl_mode_config = EDL_MODES.get(selected_edl_mode, {})
-        use_edl = edl_mode_config.get("use_edl", False)
-        w_edl = edl_mode_config.get("w_edl", 0.0)
-        use_edl_uncertainty = edl_mode_config.get("use_edl_uncertainty", False)
-        edl_uncertainty_weight = edl_mode_config.get("edl_uncertainty_weight", 0.0)
-        
-        # 显示当前模式的参数信息
-        st.caption(
-            f"当前模式参数：w_edl={w_edl:.1f}, "
-            f"use_uncertainty={use_edl_uncertainty}, "
-            f"unc_weight={edl_uncertainty_weight:.1f}"
-        )
-        
-        # ====================================================================
-        # Step 2: 路线偏好滑条（多目标权重）
-        # ====================================================================
-        st.subheader("路线偏好（多目标权重）")
-        
-        # 安全性 vs 燃油权衡
-        risk_vs_fuel = st.slider(
-            "安全性 vs 燃油（0=更省油，1=更安全）",
-            min_value=0.0,
-            max_value=1.0,
-            value=0.5,
-            step=0.05,
-            help="向左倾向选择燃油消耗少的路线；向右倾向选择风险低的路线。",
-        )
-        
-        # 不确定性重要性
-        uncertainty_importance = st.slider(
-            "不确定性重要性",
-            min_value=0.0,
-            max_value=1.0,
-            value=0.5,
-            step=0.05,
-            help="越大越倾向避开 EDL 不确定性高的区域。",
-        )
-        
-        # 根据滑条值计算三个权重
-        # 设计思路：
-        # - weight_fuel = 1.0 - risk_vs_fuel（燃油权重与安全性反向）
-        # - weight_risk = risk_vs_fuel * (1.0 - 0.3 * uncertainty_importance)
-        # - weight_uncertainty = risk_vs_fuel * (0.3 * uncertainty_importance)
-        # - 最后归一化使总和为 1
-        weight_fuel = 1.0 - risk_vs_fuel
-        weight_risk = risk_vs_fuel * (1.0 - 0.3 * uncertainty_importance)
-        weight_uncertainty = risk_vs_fuel * (0.3 * uncertainty_importance)
-        
-        # 归一化权重，使总和为 1
-        weight_sum = weight_fuel + weight_risk + weight_uncertainty
-        if weight_sum > 0:
-            weight_fuel /= weight_sum
-            weight_risk /= weight_sum
-            weight_uncertainty /= weight_sum
-        
-        # 显示权重分配
-        st.caption(
-            f"权重分配：燃油 {weight_fuel:.1%} | 风险 {weight_risk:.1%} | 不确定性 {weight_uncertainty:.1%}"
-        )
-        
-        st.subheader("船舶配置")
-        vessel_profiles = get_default_profiles()
-        vessel_keys = list(vessel_profiles.keys())
         vessel_default = st.session_state.get("vessel_profile", vessel_keys[0] if vessel_keys else None)
         if vessel_default not in vessel_keys:
             vessel_default = vessel_keys[0]
+
+        def _vessel_label(key: str) -> str:
+            profile = vessel_profiles[key]
+            ship_label = profile.name.split(" (")[0] if profile.name else key
+            ice_label = profile.ice_class_label or "No Ice Class"
+            return f"{ship_label} / {ice_label} ({key})"
+
         selected_vessel_key = st.selectbox(
-            "选择船型",
+            "????",
             options=vessel_keys,
             index=vessel_keys.index(vessel_default),
-            format_func=lambda k: f"{vessel_profiles[k].name} ({k})",
+            format_func=_vessel_label,
         )
         selected_vessel = vessel_profiles[selected_vessel_key]
         

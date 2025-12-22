@@ -1,78 +1,53 @@
-"""Streamlit entrypoint for the ArcticRoute UI shell."""
+"""
+Streamlit entrypoint for the ArcticRoute UI shell.
+
+重构版本 - 使用统一路由系统，避免双导航问题
+"""
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pandas as pd
 import streamlit as st
 
-from arcticroute.ui import home, planner_minimal, eval_results
-
-
-def inject_global_style() -> None:
-    """Lightweight global styling for tighter layout and softer cards."""
-    st.markdown(
-        """
-        <style>
-        .main .block-container {
-            padding-top: 2rem;
-            padding-bottom: 2rem;
-            max-width: 1200px;
-        }
-        .stDataFrame { font-size: 0.9rem; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def render_experiment_view() -> None:
-    """Simple placeholder for scenario experiment results."""
-    results_path = Path(__file__).resolve().parent / "reports" / "scenario_suite_results.csv"
-    st.subheader("场景实验结果")
-    if not results_path.exists():
-        st.info("reports/scenario_suite_results.csv 未找到，后续可在此接入实验页面。")
-        return
-
-    df_results = pd.read_csv(results_path)
-    st.dataframe(df_results, use_container_width=True)
-
-    if {"distance_km", "total_cost"}.issubset(df_results.columns):
-        st.caption("距离-成本散点概览")
-        try:
-            st.scatter_chart(df_results, x="distance_km", y="total_cost", color="mode")
-        except Exception:
-            pass
+from arcticroute.ui.shell_skin import inject_all_styles
+from arcticroute.ui.app_router import (
+    get_router,
+    PAGE_COVER,
+    PAGE_PLANNER,
+    PAGE_DATA,
+    PAGE_RULES,
+    PAGE_ABOUT,
+)
+from arcticroute.ui.pages_cover import render_cover
+from arcticroute.ui.pages_data import render_data
+from arcticroute.ui.pages_rules import render_rules
+from arcticroute.ui.pages_about import render_about
+from arcticroute.ui import planner_minimal
 
 
 def main() -> None:
+    """应用主入口"""
+    
+    # 设置页面配置（必须在最开始）
     st.set_page_config(
-        page_title="ArcticRoute UI",
+        page_title="ArcticRoute",
+        page_icon="🧊",
         layout="wide",
         initial_sidebar_state="expanded",
     )
-    st.session_state["_ar_page_config_set"] = True
-    inject_global_style()
-
-    page = st.sidebar.radio(
-        "页面导航",
-        options=["总览", "航线规划驾驶舱", "场景实验结果", "EDL 评估结果"],
-        index=0,
-    )
-
-    if "active_page" in st.session_state and st.session_state.active_page == "planner":
-        page = "航线规划驾驶舱"
-        st.session_state.pop("active_page")
-
-    if page == "总览":
-        home.render()
-    elif page == "航线规划驾驶舱":
-        planner_minimal.render()
-    elif page == "场景实验结果":
-        render_experiment_view()
-    elif page == "EDL 评估结果":
-        eval_results.render()
+    
+    # 注入 UI 样式
+    inject_all_styles()
+    
+    # 获取路由器并注册页面
+    router = get_router()
+    router.register(PAGE_COVER, render_cover)
+    router.register(PAGE_PLANNER, planner_minimal.render)
+    router.register(PAGE_DATA, render_data)
+    router.register(PAGE_RULES, render_rules)
+    router.register(PAGE_ABOUT, render_about)
+    
+    # 运行路由器（渲染导航和当前页面）
+    router.run()
 
 
 if __name__ == "__main__":
