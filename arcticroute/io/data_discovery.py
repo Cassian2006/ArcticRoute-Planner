@@ -104,14 +104,34 @@ def _get_file_info(path: Path) -> Tuple[float, datetime]:
 
 @lru_cache(maxsize=1)
 def _load_cmems_index() -> Optional[Dict]:
-    """加载 CMEMS newenv 索引文件"""
-    index_path = Path("reports/cmems_newenv_index.json")
-    if index_path.exists():
+    """?? CMEMS newenv ????"""
+    index_candidates = [
+        Path("data_processed/newenv/cmems_newenv_index.json"),
+        Path("reports/cmems_newenv_index.json"),
+    ]
+    for index_path in index_candidates:
+        if not index_path.exists():
+            continue
         try:
             with open(index_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            logger.warning(f"Failed to load CMEMS index: {e}")
+            logger.warning(f"Failed to load CMEMS index {index_path}: {e}")
+    return None
+
+
+def _get_index_layer_path(index: Dict, key: str) -> Optional[str]:
+    """?????????????????"""
+    if not isinstance(index, dict):
+        return None
+    if "layers" in index and isinstance(index["layers"], dict):
+        layer_entry = index["layers"].get(key)
+        if isinstance(layer_entry, dict):
+            return layer_entry.get("target_path") or layer_entry.get("path")
+        if isinstance(layer_entry, str):
+            return layer_entry
+    if key in index and isinstance(index[key], str):
+        return index[key]
     return None
 
 
@@ -154,7 +174,7 @@ def discover_cmems_layers(
         },
         "swh": {
             "newenv_patterns": ["wave_swh.nc", "swh_latest.nc", "swh.nc"],
-            "cache_patterns": ["*swh*.nc", "*wave*.nc"],
+            "cache_patterns": ["*swh*.nc", "*wave*.nc", "*wav*.nc"],
             "index_key": "swh",
         },
         "sit": {
@@ -222,8 +242,9 @@ def discover_cmems_layers(
             continue
         
         # 4. 检查索引文件
-        if index and config["index_key"] in index:
-            index_path = Path(index[config["index_key"]])
+        index_path_str = _get_index_layer_path(index, config["index_key"]) if index else None
+        if index_path_str:
+            index_path = Path(index_path_str)
             if index_path.exists():
                 size_mb, mtime = _get_file_info(index_path)
                 layers[layer_name] = DataLayerInfo(

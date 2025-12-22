@@ -15,12 +15,15 @@ import streamlit as st
 
 from arcticroute.io.data_discovery import (
     discover_cmems_layers,
-    discover_ais_density_nc,
     clear_discovery_caches,
     get_cmems_status_summary,
-    get_ais_search_summary,
     DEFAULT_AIS_DIRS,
+    DEFAULT_NEWENV_DIRS,
+    DEFAULT_CACHE_DIRS,
 )
+from arcticroute.core.ais_density_select import scan_candidates, select_best_candidate
+from arcticroute.core.cost import compute_grid_signature
+from arcticroute.core.grid import load_grid_with_landmask
 
 
 def get_manifest_path() -> Path:
@@ -92,6 +95,47 @@ def run_static_assets_doctor() -> dict:
         }
 
 
+def run_cmems_newenv_sync() -> dict:
+    """?? CMEMS ??????"""
+
+    try:
+        result = subprocess.run(
+            ["python", "-m", "scripts.cmems_newenv_sync"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return {
+            "exit_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "timestamp": datetime.now().isoformat(),
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "exit_code": -1,
+            "error": "Timeout: sync script took too long",
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        return {
+            "exit_code": -1,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+
+def scan_static_assets() -> dict:
+    """???????????? UI ??/??????"""
+    candidates = {
+        "bathymetry": Path("data_real/bathymetry.nc"),
+        "ports": Path("data_real/ports"),
+        "corridors": Path("data_real/corridors"),
+        "ais": Path("data_real/ais"),
+    }
+    return {key: path.exists() for key, path in candidates.items()}
+
+
 def render_data() -> None:
     """渲染数据页"""
     
@@ -106,8 +150,12 @@ def render_data() -> None:
     
     with col1:
         if st.button("🔄 重新扫描 CMEMS 数据", use_container_width=True):
+            st.toast("开始同步 CMEMS 缓存并重新扫描...")
             clear_discovery_caches()
-            st.toast("缓存已清理，正在重新扫描...")
+            st.cache_data.clear()
+            with st.spinner("正在同步 CMEMS 缓存到 newenv..."):
+                sync_result = run_cmems_newenv_sync()
+            st.session_state["cmems_sync_result"] = sync_result
             st.rerun()
     
     with col2:
@@ -117,6 +165,15 @@ def render_data() -> None:
             st.cache_data.clear()
             st.toast("所有缓存已清理")
             st.success("✓ 缓存已清理")
+
+    if "cmems_sync_result" in st.session_state:
+        sync_result = st.session_state.pop("cmems_sync_result")
+        if sync_result.get("exit_code") == 0:
+            st.success("✅ CMEMS 同步完成，状态已更新")
+            st.toast("CMEMS 同步完成")
+        else:
+            error_msg = sync_result.get("error", sync_result.get("stderr", "Unknown error"))
+            st.error(f"❌ CMEMS 同步失败：{error_msg}")
     
     # 运行数据发现
     with st.spinner("正在扫描 CMEMS 数据..."):
@@ -167,123 +224,150 @@ def render_data() -> None:
     
     # 搜索目录说明
     with st.expander("📂 搜索目录说明", expanded=False):
-        st.markdown("""
-        **搜索优先级：**
-        1. 手动指定路径（如果提供）
-        2. `data_processed/newenv/` 标准文件名
-        3. `data/cmems_cache/` 递归搜索
-        4. `reports/cmems_newenv_index.json` 索引文件
+        search_dirs = DEFAULT_NEWENV_DIRS + DEFAULT_CACHE_DIRS
+        st.markdown(
+            f"""
+        **??????**
+        1. ????????????
+        2. `data_processed/newenv/` ?????
+        3. `data/cmems_cache/` ????
+        4. `data_processed/newenv/cmems_newenv_index.json` ????
+        5. `reports/cmems_newenv_index.json` ?????fallback?
         
-        **标准文件名：**
-        - SIC: `ice_copernicus_sic.nc` 或 `sic_latest.nc`
-        - SWH: `wave_swh.nc` 或 `swh_latest.nc`
-        - SIT: `ice_thickness.nc` 或 `sit_latest.nc`
-        - Drift: `ice_drift.nc` 或 `drift_latest.nc`
+        **???????**
+        {chr(10).join(f'- `{d}`' for d in search_dirs)}
         
-        **Cache 匹配模式：**
+        **??????**
+        - SIC: `ice_copernicus_sic.nc` ?`sic_latest.nc`
+        - SWH: `wave_swh.nc` ?`swh_latest.nc`
+        - SIT: `ice_thickness.nc` ?`sit_latest.nc`
+        - Drift: `ice_drift.nc` ?`drift_latest.nc`
+        
+        **Cache ?????**
         - SIC: `*sic*.nc`, `*siconc*.nc`
         - SWH: `*swh*.nc`, `*wave*.nc`
         - SIT: `*thickness*.nc`, `*sit*.nc`
         - Drift: `*drift*.nc`, `*uice*.nc`, `*vice*.nc`
-        """)
+        """
+        )
     
     st.markdown("---")
     
-    # ========== AIS 密度数据 ==========
-    st.subheader("🚢 AIS 密度数据定位")
-    
-    # 扫描目录配置
+    # ========== AIS ???? ==========
+    st.subheader("?? AIS ??????")
+    st.caption("???????? bathymetry / ports / corridors / AIS ????")
+
+    # ??????
     default_dirs_str = ", ".join(DEFAULT_AIS_DIRS[:3]) + "..."
-    
+
     ais_dirs_input = st.text_input(
-        "扫描目录（逗号分隔）",
+        "??????????",
         value=default_dirs_str,
-        help="输入要搜索的目录，用逗号分隔。留空使用默认目录。",
+        help="????????????????????????",
     )
-    
-    # 解析输入的目录
+
+    # ???????
     if ais_dirs_input and ais_dirs_input != default_dirs_str:
         custom_dirs = [d.strip() for d in ais_dirs_input.split(",") if d.strip()]
     else:
-        custom_dirs = None
-    
-    # 重新扫描按钮
-    if st.button("[object Object]AIS 数据", use_container_width=True):
+        st.error("? ??? AIS ????")
+        st.info("**???????**\n" + "\n".join(f"- {d}" for d in search_dirs))
+        st.caption("??? AIS ?????.nc ???????????")
+
+    # ??????
+    if st.button("?? ???? AIS", use_container_width=True):
         clear_discovery_caches()
-        st.toast("正在重新扫描 AIS 数据...")
+        st.cache_data.clear()
+        st.toast("?????? AIS ??...")
+        st.session_state["ais_scan_requested"] = True
         st.rerun()
-    
-    # 运行 AIS 发现
-    with st.spinner("正在扫描 AIS 密度文件..."):
+
+    # ?? AIS ??
+    with st.spinner("???? AIS ????..."):
         if custom_dirs:
-            candidates, best = discover_ais_density_nc(search_dirs=custom_dirs)
             search_dirs = custom_dirs
         else:
-            candidates, best = discover_ais_density_nc()
             search_dirs = DEFAULT_AIS_DIRS
-        
-        ais_summary = get_ais_search_summary(candidates, search_dirs)
-    
-    # 显示摘要
+
+        grid_sig = None
+        try:
+            grid, _, _ = load_grid_with_landmask(prefer_real=True)
+            if grid is not None:
+                grid_sig = compute_grid_signature(grid)
+        except Exception:
+            grid_sig = None
+
+        candidates = scan_candidates([Path(d) for d in search_dirs])
+        candidates.sort(key=lambda c: c.mtime, reverse=True)
+        best, best_meta = select_best_candidate(candidates, grid_sig)
+
+    # ????
     col1, col2 = st.columns(2)
-    
+
     with col1:
+        found_count = len(candidates)
         st.metric(
-            "找到文件",
-            ais_summary['found_count'],
-            delta="可用" if ais_summary['found_count'] > 0 else "未找到",
-            delta_color="normal" if ais_summary['found_count'] > 0 else "inverse",
+            "????",
+            found_count,
+            delta="??" if found_count > 0 else "???",
+            delta_color="normal" if found_count > 0 else "inverse",
         )
-    
+
     with col2:
         if best:
             st.metric(
-                "推荐文件",
-                Path(best.path).name,
-                delta=f"最新 ({best.mtime.strftime('%Y-%m-%d')})",
+                "????",
+                best.path.name,
+                delta=f"??({best.mtime.strftime('%Y-%m-%d')})",
             )
+            if grid_sig and not best.signature_matched:
+                st.info("?????????????")
         else:
-            st.metric("推荐文件", "无", delta="未找到任何文件", delta_color="inverse")
-    
-    # 候选文件列表
+            st.metric("????", "?", delta="???????", delta_color="inverse")
+
+    if st.session_state.pop("ais_scan_requested", False):
+        st.success("? AIS ????")
+        st.toast("AIS ????")
+
+    # ??????
     if candidates:
-        st.markdown("#### 候选文件")
-        
+        st.markdown("#### ????")
+
         table_data = []
-        for i, candidate in enumerate(candidates):
+        for candidate in candidates:
             is_best = (best and candidate.path == best.path)
             table_data.append({
-                "推荐": "⭐" if is_best else "",
-                "文件名": Path(candidate.path).name,
-                "路径": candidate.path,
-                "大小": f"{candidate.size_mb:.1f} MB",
-                "修改时间": candidate.mtime.strftime("%Y-%m-%d %H:%M:%S"),
-                "形状": str(candidate.shape) if candidate.shape else "—",
+                "??": "?" if is_best else "",
+                "???": candidate.path.name,
+                "??": str(candidate.path),
+                "??": f"{candidate.size_mb:.1f} MB",
+                "????": candidate.mtime.strftime("%Y-%m-%d %H:%M:%S"),
+                "??": str(candidate.shape) if candidate.shape else "?",
+                "signature_matched": "?" if candidate.signature_matched else "",
             })
-        
+
         st.dataframe(table_data, use_container_width=True, hide_index=True)
     else:
-        st.error("❌ 未找到 AIS 密度文件")
-        st.info(f"**已搜索的目录：**\n" + "\n".join(f"- {d}" for d in search_dirs))
-        st.caption("请确保 AIS 密度文件（.nc 格式）存在于上述目录中")
-    
-    # 搜索说明
-    with st.expander("📂 AIS 搜索说明", expanded=False):
+        st.error("? ??? AIS ????")
+        st.info("**???????**\n" + "\n".join(f"- {d}" for d in search_dirs))
+        st.caption("??? AIS ?????.nc ???????????")
+
+    # ????
+    with st.expander("?? AIS ????", expanded=False):
         st.markdown(f"""
-        **默认搜索目录：**
+        **???????**
         {chr(10).join(f'- `{d}`' for d in DEFAULT_AIS_DIRS)}
-        
-        **搜索规则：**
-        - 递归扫描所有 `.nc` 文件
-        - 优先匹配包含关键词的文件：`density`, `ais`, `traffic`, `corridor`
-        - 按修改时间排序（最新的优先）
-        
-        **如何添加 AIS 文件：**
-        1. 将 AIS 密度 NetCDF 文件放到上述任一目录
-        2. 文件名建议包含 `ais` 或 `density` 关键词
-        3. 点击"重新扫描"按钮
+
+        **?????**
+        - ??????`.nc`??
+        - ?????????????`density`, `ais`, `traffic`, `corridor`
+        - ??????????????
+
+        **???? AIS ???**
+        1. ? AIS ?? NetCDF ??????????
+        2. ???????`ais`?`density`???
+        3. ??"????"??
         """)
-    
     st.markdown("---")
     
     # ========== 静态资产 ==========
