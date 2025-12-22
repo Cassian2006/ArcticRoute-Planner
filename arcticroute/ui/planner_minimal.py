@@ -13,6 +13,7 @@ Phase 3：三方案 demo Planner，支持 efficient / edl_safe / edl_robust 三�
 from __future__ import annotations
 
 import math
+import json
 from dataclasses import dataclass, field
 from typing import Any, Dict
 from pathlib import Path
@@ -21,6 +22,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from datetime import datetime
+
+from arcticroute.ui.shell_skin import inject_shell_css
 
 from arcticroute.core.ais_analysis import evaluate_route_vs_ais_density
 from arcticroute.core.grid import make_demo_grid, load_real_grid_from_nc
@@ -34,12 +37,15 @@ from arcticroute.core.cost import (
     list_available_ais_density_files,
     discover_ais_density_candidates,
     compute_grid_signature,
+    AIS_DENSITY_PATH_DEMO,
+    AIS_DENSITY_PATH_REAL,
 )
 from arcticroute.core.env_real import load_real_env_for_grid
 from arcticroute.core.astar import plan_route_latlon
 from arcticroute.core.analysis import compute_route_cost_breakdown, compute_route_profile
 from arcticroute.core.eco.vessel_profiles import get_default_profiles, VesselProfile
 from arcticroute.core.eco.eco_model import estimate_route_eco
+from arcticroute.core.config_paths import get_newenv_path
 
 # 导入共享配置
 from arcticroute.config import EDL_MODES, list_edl_modes
@@ -94,6 +100,192 @@ MAP_CONTROLLER = {
     "touchZoom": True,
     "keyboard": False,
 }
+
+NAV_PAGES = ["🏠 封面", "🧭 规划", "🛰️ 数据", "🧊 规则&诊断", "ℹ️ 关于"]
+
+
+def _sync_nav_from_query() -> None:
+    page_param = st.query_params.get("page")
+    if isinstance(page_param, list):
+        page_param = page_param[0] if page_param else None
+    page_param = (page_param or "").lower()
+    mapping = {
+        "cover": NAV_PAGES[0],
+        "planner": NAV_PAGES[1],
+        "data": NAV_PAGES[2],
+        "rules": NAV_PAGES[3],
+        "about": NAV_PAGES[4],
+    }
+    target = mapping.get(page_param)
+    if target:
+        st.session_state["nav_page"] = target
+
+
+def _render_cover_page() -> None:
+    st.markdown(
+        """
+        <div class="cover-card card">
+          <div style="display:flex; flex-direction:column; gap:1rem;">
+            <div>
+              <div style="font-size:0.9rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted, #8aa0b2);">
+                ArcticRoute Mission Control
+              </div>
+              <h1 style="margin:0.3rem 0 0.6rem 0; font-size:2.4rem;">🧊 北极航线智能规划</h1>
+              <p style="margin:0; max-width:640px; color:var(--muted, #9fb2c0);">
+                多源海冰与波浪情报叠加，快速生成安全/效率/稳健三种航线。
+              </p>
+            </div>
+            <div style="display:flex; gap:0.8rem; flex-wrap:wrap;">
+              <a class="btn" href="?page=planner">🧭 进入规划</a>
+              <a class="btn" href="?page=data">🛰️ 打开数据页</a>
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.stop()
+
+
+def _render_data_page() -> None:
+    newenv_dir = get_newenv_path()
+
+    cmems_files = {
+        "SIC": newenv_dir / "ice_copernicus_sic.nc",
+        "SWH": newenv_dir / "wave_swh.nc",
+        "SIT": newenv_dir / "ice_thickness.nc",
+        "Drift": newenv_dir / "ice_drift.nc",
+    }
+
+    def _status(path: Path) -> tuple[str, str]:
+        if path.exists():
+            return "loaded", str(path)
+        return "missing", f"missing: {path}"
+
+    def _to_float(value: object) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    st.markdown("## 🛰️ 数据同步与诊断")
+
+    cmems_lines = []
+    for label, path in cmems_files.items():
+        state, reason = _status(path)
+        cmems_lines.append(f"<li><b>{label}</b>: {state} <span style='color:var(--muted, #9fb2c0);'>({reason})</span></li>")
+
+    st.markdown(
+        f"""
+        <div class="card">
+          <h3 style="margin-top:0;">CMEMS / 海洋环境</h3>
+          <ul>
+            {''.join(cmems_lines)}
+          </ul>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    newenv_checks = [
+        newenv_dir / "env_clean.nc",
+        newenv_dir / "grid_spec.nc",
+        newenv_dir / "land_mask_gebco.nc",
+        newenv_dir / "ice_thickness.nc",
+        newenv_dir / "ice_drift.nc",
+    ]
+    newenv_lines = []
+    for path in newenv_checks:
+        state, reason = _status(path)
+        newenv_lines.append(f"<li><b>{path.name}</b>: {state} <span style='color:var(--muted, #9fb2c0);'>({reason})</span></li>")
+
+    st.markdown(
+        f"""
+        <div class="card">
+          <h3 style="margin-top:0;">newenv 同步状态</h3>
+          <ul>
+            {''.join(newenv_lines)}
+          </ul>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    report_path = Path(__file__).resolve().parents[2] / "reports" / "static_assets_doctor.json"
+    if report_path.exists():
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        missing_required = report.get("missing_required", [])
+        missing_optional = report.get("missing_optional", [])
+        all_ok = report.get("all_ok", False)
+        summary = f"required missing={len(missing_required)}, optional missing={len(missing_optional)}, all_ok={all_ok}"
+    else:
+        summary = f"report missing: {report_path}"
+
+    st.markdown(
+        f"""
+        <div class="card">
+          <h3 style="margin-top:0;">Static Assets Doctor</h3>
+          <p style="color:var(--muted, #9fb2c0); margin:0;">{summary}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    corridor_enabled = any(
+        _to_float(st.session_state.get(key, 0.0)) > 0.0
+        for key in ["w_ais", "w_ais_corridor", "w_ais_congestion"]
+    )
+    corridor_files = [AIS_DENSITY_PATH_REAL, AIS_DENSITY_PATH_DEMO]
+    corridor_available = any(Path(p).exists() for p in corridor_files)
+
+    ports_path = Path(__file__).resolve().parents[2] / "data_real" / "ports"
+    bathy_path = Path(__file__).resolve().parents[2] / "data_real" / "bathymetry" / "ibcao_v4_400m_subset.nc"
+
+    st.markdown(
+        f"""
+        <div class="card">
+          <h3 style="margin-top:0;">基础图层</h3>
+          <ul>
+            <li><b>Ports</b>: {"enabled" if ports_path.exists() else "missing"} <span style='color:var(--muted, #9fb2c0);'>({ports_path})</span></li>
+            <li><b>Corridors</b>: {"enabled" if corridor_enabled else "disabled"} <span style='color:var(--muted, #9fb2c0);'>(AIS files available: {corridor_available})</span></li>
+            <li><b>Bathymetry</b>: {"enabled" if bathy_path.exists() else "missing"} <span style='color:var(--muted, #9fb2c0);'>({bathy_path})</span></li>
+          </ul>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.stop()
+
+
+def _render_rules_page() -> None:
+    st.markdown(
+        """
+        <div class="card">
+          <h3 style="margin-top:0;">🧊 规则与诊断</h3>
+          <p style="color:var(--muted, #9fb2c0); margin:0;">
+            这里用于汇总规则阈值、约束开关与诊断提示。当前复用规划页中的诊断面板与日志输出。
+          </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.stop()
+
+
+def _render_about_page() -> None:
+    st.markdown(
+        """
+        <div class="card">
+          <h3 style="margin-top:0;">ℹ️ 关于 ArcticRoute</h3>
+          <p style="color:var(--muted, #9fb2c0); margin:0;">
+            ArcticRoute 是面向北极航线的多源风险评估与智能规划系统。当前页面用于快速浏览规划与数据状态。
+          </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.stop()
 
 
 # ============================================================================
@@ -650,6 +842,26 @@ def render() -> None:
             initial_sidebar_state="expanded",
         )
         st.session_state["_ar_page_config_set"] = True
+
+    inject_shell_css()
+    _sync_nav_from_query()
+    default_page = st.session_state.get("nav_page", NAV_PAGES[0])
+    if default_page not in NAV_PAGES:
+        default_page = NAV_PAGES[0]
+    page = st.sidebar.radio(
+        "页面导航",
+        options=NAV_PAGES,
+        index=NAV_PAGES.index(default_page),
+        key="nav_page",
+    )
+    if page == NAV_PAGES[0]:
+        _render_cover_page()
+    if page == NAV_PAGES[2]:
+        _render_data_page()
+    if page == NAV_PAGES[3]:
+        _render_rules_page()
+    if page == NAV_PAGES[4]:
+        _render_about_page()
     
     st.title("ArcticRoute 航线规划驾驶舱")
     st.caption("基于多模态环境场（冰 / 浪 / AIS / 冰级 / EDL）的北极航线智能规划系统")
