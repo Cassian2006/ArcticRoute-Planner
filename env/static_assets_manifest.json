@@ -1,0 +1,114 @@
+{
+  "schema": "arcticroute.static_assets.v1",
+  "root_rel": "data/static_assets",
+  "entries": {
+    "bathymetry_ibcao_v4_200m_nc": {
+      "asset_id": "bathymetry_ibcao_v4_200m_nc",
+      "filename": "IBCAO_v4_200m.nc",
+      "relpath": "data/static_assets/IBCAO_v4_200m.nc",
+      "abspath_hint": "C:\\Users\\sgddsf\\Desktop\\AR_final\\data\\static_assets\\IBCAO_v4_200m.nc",
+      "bytes": 2176524217,
+      "mtime": 1766305289,
+      "sha256": "5caff927212a0f2cc9318e879ed99f4c323c29edd8f3eb04d38d997e811c26ef"
+    },
+    "bathymetry_ibcao_v5_1_2025_depth_400m_tif": {
+      "asset_id": "bathymetry_ibcao_v5_1_2025_depth_400m_tif",
+      "filename": "ibcao_v5_1_2025_depth_400m.tif",
+      "relpath": "data/static_assets/ibcao_v5_1_2025_depth_400m.tif",
+      "abspath_hint": "C:\\Users\\sgddsf\\Desktop\\AR_final\\data\\static_assets\\ibcao_v5_1_2025_depth_400m.tif",
+      "bytes": 846897673,
+      "mtime": 1766307710,
+      "sha256": "e6eda20f01e5c846ea5abe7475258fe3415cc3989fadab6f24415e73cd17df7d"
+    },
+    "ports_world_port_index_geojson": {
+      "asset_id": "ports_world_port_index_geojson",
+      "filename": "World_Port_Index.geojson",
+      "relpath": "data/static_assets/World_Port_Index.geojson",
+      "abspath_hint": "C:\\Users\\sgddsf\\Desktop\\AR_final\\data\\static_assets\\World_Port_Index.geojson",
+      "bytes": 5759074,
+      "mtime": 1766304209,
+      "sha256": "909424c9cf65692fe5c42399147a6c864fde74d6db5da37c9c8e250a26723b67"
+    },
+    "corridors_shipping_hydrography_geojson": {
+      "asset_id": "corridors_shipping_hydrography_geojson",
+      "filename": "Shipping_and_Hydrography_-6814444480993915291.geojson",
+      "relpath": "data/static_assets/Shipping_and_Hydrography_-6814444480993915291.geojson",
+      "abspath_hint": "C:\\Users\\sgddsf\\Desktop\\AR_final\\data\\static_assets\\Shipping_and_Hydrography_-6814444480993915291.geojson",
+      "bytes": 3867,
+      "mtime": 1766304252,
+      "sha256": "32cc8852dea9898a3e598131c8005bd2530c4abc90a98150825464a1658ec1d4"
+    },
+    "rules_pub150_pdf": {
+      "asset_id": "rules_pub150_pdf",
+      "filename": "Pub150bk.pdf",
+      "relpath": "data/static_assets/Pub150bk.pdf",
+      "abspath_hint": "C:\\Users\\sgddsf\\Desktop\\AR_final\\data\\static_assets\\Pub150bk.pdf",
+      "bytes": 4473924,
+      "mtime": 1766303889,
+      "sha256": "09420b1acad4f899cbe7af843326bcb4cde364ac17168887b7a7063a08fe3c1c"
+    }
+  },
+  "missing_required": [],
+  "debug": {
+    "bathymetry_ibcao_v4_200m_nc": {
+      "optional": false,
+      "candidates": [
+        {
+          "path": "C:\\Users\\sgddsf\\Desktop\\xinshuju\\IBCAO_v4_200m.nc",
+          "bytes": 2176524217,
+          "exact_hit": true,
+          "token_hit": true
+        }
+      ],
+      "selected": "C:\\Users\\sgddsf\\Desktop\\xinshuju\\IBCAO_v4_200m.nc"
+    },
+    "bathymetry_ibcao_v5_1_2025_depth_400m_tif": {
+      "optional": true,
+      "candidates": [
+        {
+          "path": "C:\\Users\\sgddsf\\Desktop\\xinshuju\\ibcao_v5_1_2025_depth_400m.tif",
+          "bytes": 846897673,
+          "exact_hit": true,
+          "token_hit": true
+        }
+      ],
+      "selected": "C:\\Users\\sgddsf\\Desktop\\xinshuju\\ibcao_v5_1_2025_depth_400m.tif"
+    },
+    "ports_world_port_index_geojson": {
+      "optional": false,
+      "candidates": [
+        {
+          "path": "C:\\Users\\sgddsf\\Desktop\\xinshuju\\World_Port_Index.geojson",
+          "bytes": 5759074,
+          "exact_hit": true,
+          "token_hit": true
+        }
+      ],
+      "selected": "C:\\Users\\sgddsf\\Desktop\\xinshuju\\World_Port_Index.geojson"
+    },
+    "corridors_shipping_hydrography_geojson": {
+      "optional": false,
+      "candidates": [
+        {
+          "path": "C:\\Users\\sgddsf\\Desktop\\xinshuju\\Shipping_and_Hydrography_-6814444480993915291.geojson",
+          "bytes": 3867,
+          "exact_hit": false,
+          "token_hit": true
+        }
+      ],
+      "selected": "C:\\Users\\sgddsf\\Desktop\\xinshuju\\Shipping_and_Hydrography_-6814444480993915291.geojson"
+    },
+    "rules_pub150_pdf": {
+      "optional": false,
+      "candidates": [
+        {
+          "path": "C:\\Users\\sgddsf\\Desktop\\xinshuju\\Pub150bk.pdf",
+          "bytes": 4473924,
+          "exact_hit": true,
+          "token_hit": true
+        }
+      ],
+      "selected": "C:\\Users\\sgddsf\\Desktop\\xinshuju\\Pub150bk.pdf"
+    }
+  }
+}
