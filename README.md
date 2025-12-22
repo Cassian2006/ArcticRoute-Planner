@@ -62,10 +62,21 @@ streamlit run run_ui.py
 ### 3. 运行测试
 
 ```bash
+# 运行所有测试
 pytest tests/
+
+# 运行多源回归测试套件
+pytest -q tests/test_cost_multisource_sensitivity.py \
+       tests/test_cost_sit_drift_effect.py \
+       tests/test_planner_selection_traceability.py
 ```
 
-验证包结构与基本导入功能。
+**多源回归测试说明**：
+- `test_cost_multisource_sensitivity.py`: 验证 AIS、浅水、POLARIS 等多源数据对成本的影响
+- `test_cost_sit_drift_effect.py`: 验证海冰厚度（SIT）、漂移（Drift）对成本的影响及缺失数据处理
+- `test_planner_selection_traceability.py`: 验证规划器选择的可追溯性和回退机制
+
+这些测试使用真实的 vessel profiles 和黑盒测试方式（通过 demo_end_to_end 脚本），确保系统的稳定性和可追溯性。
 
 ## 开发计划
 
