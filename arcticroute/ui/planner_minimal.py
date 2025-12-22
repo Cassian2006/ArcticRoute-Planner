@@ -843,27 +843,8 @@ def render() -> None:
         )
         st.session_state["_ar_page_config_set"] = True
 
-    inject_shell_css()
-    _sync_nav_from_query()
-    default_page = st.session_state.get("nav_page", NAV_PAGES[0])
-    if default_page not in NAV_PAGES:
-        default_page = NAV_PAGES[0]
-    page = st.sidebar.radio(
-        "页面导航",
-        options=NAV_PAGES,
-        index=NAV_PAGES.index(default_page),
-        key="nav_page",
-    )
-    if page == NAV_PAGES[0]:
-        _render_cover_page()
-    if page == NAV_PAGES[2]:
-        _render_data_page()
-    if page == NAV_PAGES[3]:
-        _render_rules_page()
-    if page == NAV_PAGES[4]:
-        _render_about_page()
+    # 导航逻辑已移至 render_app() 统一处理
     
-    st.title("ArcticRoute 航线规划驾驶舱")
     st.caption("基于多模态环境场（冰 / 浪 / AIS / 冰级 / EDL）的北极航线智能规划系统")
     
     st.info(
@@ -3526,3 +3507,36 @@ def render() -> None:
                     st.info(f"可视化失败: {e}")
         else:
             st.info("reports/scenario_suite_results.csv 暂未生成，无法展示批量结果。")
+
+
+
+
+def render_app() -> None:
+    """统一入口函数：只创建一套导航，处理页面路由"""
+    inject_shell_css()
+    _sync_nav_from_query()
+    
+    # 只允许这一处创建导航
+    default_page = st.session_state.get("nav_page", NAV_PAGES[0])
+    if default_page not in NAV_PAGES:
+        default_page = NAV_PAGES[0]
+    
+    page = st.sidebar.radio(
+        "页面导航",
+        options=NAV_PAGES,
+        index=NAV_PAGES.index(default_page),
+        key="nav_page",
+    )
+
+    if page == NAV_PAGES[0]:  # 封面
+        _render_cover_page()
+    elif page == NAV_PAGES[1]:  # 规划
+        render()
+    elif page == NAV_PAGES[2]:  # 数据
+        _render_data_page()
+    elif page == NAV_PAGES[3]:  # 规则&诊断
+        _render_rules_page()
+    elif page == NAV_PAGES[4]:  # 关于
+        _render_about_page()
+
+
