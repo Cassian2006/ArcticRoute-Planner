@@ -148,7 +148,7 @@ def render_constraints_section() -> Dict[str, Any]:
             config['elevated_penalty_scale'] = elevated_penalty_scale
     
     # 浅水约束
-    with st.expander[object Object]约束", expanded=False):
+    with st.expander("🌊 浅水约束", expanded=False):
         default_shallow_enabled = st.session_state.get('shallow_enabled', False)
         shallow_enabled = st.checkbox("启用浅水约束", value=default_shallow_enabled, key="shallow_enabled")
         config['shallow_enabled'] = shallow_enabled
