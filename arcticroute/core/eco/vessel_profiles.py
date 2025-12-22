@@ -18,6 +18,13 @@ class VesselType(Enum):
     HANDYSIZE = "handysize"
     PANAMAX = "panamax"
     CAPESIZE = "capesize"
+    TANKER = "tanker"
+    CONTAINER = "container"
+    LNG = "lng"
+    RO_RO = "ro_ro"
+    GENERAL_CARGO = "general_cargo"
+    REEFER = "reefer"
+    BULKER = "bulker"
 
 
 class IceClass(Enum):
@@ -107,6 +114,55 @@ VESSEL_TYPE_PARAMETERS: Dict[VesselType, Dict[str, Any]] = {
         "design_speed_kn": 15.0,
         "base_fuel_per_km": 0.080,
         "description": "Large capesize bulk carrier.",
+    },
+    VesselType.TANKER: {
+        "label": "Tanker",
+        "dwt_range": (70000, 160000),
+        "design_speed_kn": 14.5,
+        "base_fuel_per_km": 0.065,
+        "description": "Crude/product tanker.",
+    },
+    VesselType.CONTAINER: {
+        "label": "Container",
+        "dwt_range": (30000, 140000),
+        "design_speed_kn": 18.0,
+        "base_fuel_per_km": 0.090,
+        "description": "Container carrier.",
+    },
+    VesselType.LNG: {
+        "label": "LNG Carrier",
+        "dwt_range": (90000, 170000),
+        "design_speed_kn": 19.0,
+        "base_fuel_per_km": 0.095,
+        "description": "Liquefied natural gas carrier.",
+    },
+    VesselType.RO_RO: {
+        "label": "Ro-Ro",
+        "dwt_range": (15000, 45000),
+        "design_speed_kn": 17.0,
+        "base_fuel_per_km": 0.060,
+        "description": "Roll-on/roll-off carrier.",
+    },
+    VesselType.GENERAL_CARGO: {
+        "label": "General Cargo",
+        "dwt_range": (5000, 30000),
+        "design_speed_kn": 12.5,
+        "base_fuel_per_km": 0.030,
+        "description": "Multipurpose general cargo vessel.",
+    },
+    VesselType.REEFER: {
+        "label": "Reefer",
+        "dwt_range": (8000, 20000),
+        "design_speed_kn": 16.0,
+        "base_fuel_per_km": 0.055,
+        "description": "Refrigerated cargo vessel.",
+    },
+    VesselType.BULKER: {
+        "label": "Bulker",
+        "dwt_range": (20000, 120000),
+        "design_speed_kn": 14.0,
+        "base_fuel_per_km": 0.058,
+        "description": "Generic bulk carrier.",
     },
 }
 
@@ -202,6 +258,49 @@ def create_vessel_profile(
         max_ice_thickness_m=max_ice_thickness_m,
         ice_margin_factor=ice_margin_factor,
     )
+
+
+def _ice_class_short(ice_class: IceClass) -> str:
+    if ice_class == IceClass.NO_ICE_CLASS:
+        return "NOICE"
+    if ice_class.value.startswith("fsicr_"):
+        return ice_class.value.replace("fsicr_", "").upper()
+    if ice_class.value.startswith("polar_"):
+        return ice_class.value.replace("polar_", "").upper()
+    return ice_class.value.upper()
+
+
+def _catalog_ship_key(vessel_type: VesselType) -> str:
+    return {
+        VesselType.HANDYSIZE: "handy",
+        VesselType.PANAMAX: "panamax",
+        VesselType.CAPESIZE: "capesize",
+        VesselType.TANKER: "tanker",
+        VesselType.CONTAINER: "container",
+        VesselType.LNG: "lng",
+        VesselType.RO_RO: "roro",
+        VesselType.GENERAL_CARGO: "general",
+        VesselType.REEFER: "reefer",
+        VesselType.BULKER: "bulker",
+    }[vessel_type]
+
+
+def get_profile_catalog() -> Dict[str, VesselProfile]:
+    """???????????? key???????????"""
+    catalog: Dict[str, VesselProfile] = dict(get_default_profiles())
+
+    for vessel_type in VesselType:
+        ship_key = _catalog_ship_key(vessel_type)
+        for ice_class in IceClass:
+            suffix = _ice_class_short(ice_class)
+            key = f"{ship_key}_{suffix}"
+            if key in catalog:
+                continue
+            profile = create_vessel_profile(vessel_type, ice_class)
+            profile.key = key
+            catalog[key] = profile
+
+    return catalog
 
 
 def get_default_profiles() -> Dict[str, VesselProfile]:
