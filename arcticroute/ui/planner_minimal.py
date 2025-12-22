@@ -131,6 +131,165 @@ def build_route_profiles_from_edl_modes() -> list[dict]:
     return profiles
 
 
+# ============================================================================
+# UI 同步辅助函数（Phase 9/11/13/15/17）
+# ============================================================================
+
+def _summarize_static_assets() -> dict[str, Any]:
+    """
+    读取 static_assets_doctor.json 并返回摘要信息。
+    
+    Returns:
+        dict 包含 missing_required, missing_optional 等字段
+    """
+    from pathlib import Path
+    import json
+    
+    doctor_path = Path("reports/static_assets_doctor.json")
+    if not doctor_path.exists():
+        return {
+            "missing_required": [],
+            "missing_optional": [],
+            "error": "doctor JSON 不存在"
+        }
+    
+    try:
+        data = json.loads(doctor_path.read_text(encoding="utf-8"))
+        return {
+            "missing_required": data.get("missing_required", []),
+            "missing_optional": data.get("missing_optional", []),
+            "all_ok": len(data.get("missing_required", [])) == 0,
+        }
+    except Exception as e:
+        return {
+            "missing_required": [],
+            "missing_optional": [],
+            "error": str(e)
+        }
+
+
+def _read_cmems_status() -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """
+    读取 CMEMS 刷新状态文件。
+    
+    Returns:
+        (cmems_refresh_last.json, cmems_strategy.json) 的内容，若不存在则返回 None
+    """
+    from pathlib import Path
+    import json
+    
+    refresh_path = Path("reports/cmems_refresh_last.json")
+    strategy_path = Path("reports/cmems_strategy.json")
+    
+    refresh_data = None
+    strategy_data = None
+    
+    if refresh_path.exists():
+        try:
+            refresh_data = json.loads(refresh_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    
+    if strategy_path.exists():
+        try:
+            strategy_data = json.loads(strategy_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    
+    return refresh_data, strategy_data
+
+
+def _preview_ports_corridors() -> dict[str, Any]:
+    """
+    预览 ports 和 corridors 的轻量统计。
+    
+    Returns:
+        dict 包含 ports_count, ports_preview, corridors_count, corridors_preview
+    """
+    from pathlib import Path
+    
+    try:
+        from arcticroute.io.geojson_light import read_geojson_points, read_geojson_lines
+        from arcticroute.io.static_assets import get_static_asset_path
+    except ImportError:
+        return {
+            "ports_count": 0,
+            "ports_preview": [],
+            "corridors_count": 0,
+            "corridors_preview": [],
+            "error": "geojson_light 或 static_assets 模块不可用"
+        }
+    
+    result = {
+        "ports_count": 0,
+        "ports_preview": [],
+        "corridors_count": 0,
+        "corridors_preview": [],
+    }
+    
+    # 读取 ports
+    try:
+        ports_path = get_static_asset_path("ports")
+        if ports_path and ports_path.exists():
+            ports = read_geojson_points(ports_path)
+            result["ports_count"] = len(ports)
+            result["ports_preview"] = [
+                {"name": p.get("name", "N/A"), "lat": p["lat"], "lon": p["lon"]}
+                for p in ports[:20]
+            ]
+    except Exception as e:
+        result["ports_error"] = str(e)
+    
+    # 读取 corridors
+    try:
+        corridors_path = get_static_asset_path("corridors")
+        if corridors_path and corridors_path.exists():
+            corridors = read_geojson_lines(corridors_path)
+            result["corridors_count"] = len(corridors)
+            result["corridors_preview"] = [
+                {
+                    "points": len(c["coords"]),
+                    "start": c["coords"][0] if c["coords"] else None,
+                    "end": c["coords"][-1] if c["coords"] else None,
+                }
+                for c in corridors[:5]
+            ]
+    except Exception as e:
+        result["corridors_error"] = str(e)
+    
+    return result
+
+
+def _load_rules_config(rules_config_path: str | None = None) -> dict[str, Any]:
+    """
+    加载规则配置文件（YAML）。
+    
+    Args:
+        rules_config_path: 规则配置文件路径，默认为 arcticroute/config/polar_rules.yaml
+    
+    Returns:
+        dict 包含规则配置
+    """
+    from pathlib import Path
+    
+    if rules_config_path is None:
+        rules_config_path = "arcticroute/config/polar_rules.yaml"
+    
+    path = Path(rules_config_path)
+    if not path.exists():
+        return {"error": f"规则配置文件不存在: {path}"}
+    
+    try:
+        import yaml
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return data or {}
+    except ImportError:
+        return {"error": "PyYAML 未安装，无法加载 YAML 配置"}
+    except Exception as e:
+        return {"error": f"加载规则配置失败: {e}"}
+
+
 # 从共享配置构建 ROUTE_PROFILES
 ROUTE_PROFILES = build_route_profiles_from_edl_modes()
 
@@ -311,6 +470,14 @@ def plan_three_routes(
     w_ais_corridor: float = 0.0,
     w_ais_congestion: float = 0.0,
     w_ais: float | None = None,
+    # 新增参数（Phase 9/11/15/17）
+    w_ice: float = 4.0,
+    env_source: str = "demo",
+    env_layers=None,
+    w_sit: float = 0.0,
+    w_drift: float = 0.0,
+    min_depth_m: float | None = None,
+    w_shallow: float = 0.0,
 ) -> tuple[dict[str, RouteInfo], dict, dict, dict, str]:
     """
     规划三条路线：efficient / edl_safe / edl_robust（使用 ROUTE_PROFILES 定义的个性化权重）。
@@ -1064,6 +1231,242 @@ def render() -> None:
             f"权重分配：燃油 {weight_fuel:.1%} | 风险 {weight_risk:.1%} | 不确定性 {weight_uncertainty:.1%}"
         )
         
+        # ====================================================================
+        # 新增 UI 同步面板（Phase 9/11/13/15/17）
+        # ====================================================================
+        
+        # 1.1 Planner 内核选择（Phase13）
+        with st.expander("🔧 Planner 内核选择", expanded=False):
+            planner_mode = st.selectbox(
+                "Planner 模式",
+                options=["auto", "astar", "polarroute_pipeline", "polarroute_external"],
+                index=0,
+                help="auto: 自动选择；astar: 使用内置 A*；polarroute_*: 调用外部 PolarRoute"
+            )
+            st.session_state["planner_mode"] = planner_mode
+            
+            if planner_mode == "polarroute_pipeline":
+                pipeline_dir = st.text_input(
+                    "Pipeline 目录",
+                    value=st.session_state.get("pipeline_dir", ""),
+                    help="PolarRoute pipeline 的根目录路径"
+                )
+                st.session_state["pipeline_dir"] = pipeline_dir
+            elif planner_mode == "polarroute_external":
+                external_vessel_mesh = st.text_input(
+                    "外部 Vessel Mesh",
+                    value=st.session_state.get("external_vessel_mesh", ""),
+                    help="外部船舶网格文件路径"
+                )
+                external_route_config = st.text_input(
+                    "外部 Route Config",
+                    value=st.session_state.get("external_route_config", ""),
+                    help="外部路线配置文件路径"
+                )
+                st.session_state["external_vessel_mesh"] = external_vessel_mesh
+                st.session_state["external_route_config"] = external_route_config
+            
+            # 显示运行时状态（如果有）
+            planner_status = st.session_state.get("planner_status", {})
+            if planner_status:
+                st.caption(f"上次运行：planner_used={planner_status.get('planner_used')}")
+                if planner_status.get("fallback_reason"):
+                    st.caption(f"回退原因：{planner_status.get('fallback_reason')}")
+        
+        # 1.2 环境源选择（Phase9/11/15）
+        with st.expander("🌍 环境源选择", expanded=False):
+            env_source = st.radio(
+                "环境数据源",
+                options=["demo", "real_archive", "cmems_latest", "manual_nc"],
+                index=0,
+                help="demo: 演示数据；real_archive: 归档真实数据；cmems_latest: 最新 CMEMS 数据；manual_nc: 手动指定 NC 文件"
+            )
+            st.session_state["env_source"] = env_source
+            
+            if env_source == "cmems_latest":
+                st.markdown("**CMEMS 刷新状态**")
+                refresh, strategy = _read_cmems_status()
+                if refresh:
+                    st.json(refresh)
+                else:
+                    st.caption("未找到 cmems_refresh_last.json")
+                if strategy:
+                    st.json(strategy)
+                else:
+                    st.caption("未找到 cmems_strategy.json")
+                
+                if st.button("🔄 Refresh now"):
+                    st.info("请在终端运行：python -m scripts.cmems_refresh_and_export")
+                
+                # 显示四项加载状态
+                env_status = st.session_state.get("env_status", {})
+                if env_status:
+                    st.caption(
+                        f"SIC: {'✓' if env_status.get('sic_loaded') else '✗'} | "
+                        f"SWH: {'✓' if env_status.get('swh_loaded') else '✗'} | "
+                        f"SIT: {'✓' if env_status.get('sit_loaded') else '✗'} | "
+                        f"Drift: {'✓' if env_status.get('drift_loaded') else '✗'}"
+                    )
+                    if env_status.get("fallback_reason"):
+                        st.warning(f"回退原因：{env_status['fallback_reason']}")
+            
+            elif env_source == "manual_nc":
+                st.markdown("**手动指定 NC 文件**")
+                sic_nc = st.text_input("SIC NC 文件", value=st.session_state.get("sic_nc", ""))
+                swh_nc = st.text_input("SWH NC 文件", value=st.session_state.get("swh_nc", ""))
+                sit_nc = st.text_input("SIT NC 文件", value=st.session_state.get("sit_nc", ""))
+                drift_nc = st.text_input("Drift NC 文件", value=st.session_state.get("drift_nc", ""))
+                st.session_state["sic_nc"] = sic_nc
+                st.session_state["swh_nc"] = swh_nc
+                st.session_state["sit_nc"] = sit_nc
+                st.session_state["drift_nc"] = drift_nc
+                st.caption("留空则跳过该项")
+        
+        # 1.3 AIS / Landmask 选择面板（Phase2/3）
+        with st.expander("🚢 AIS / Landmask", expanded=False):
+            st.markdown("**AIS 密度数据**")
+            st.caption(f"当前选择：{ais_density_path or '自动'}")
+            st.caption(f"匹配类型：{ais_match_type}")
+            
+            st.markdown("**Landmask**")
+            landmask_path = st.text_input(
+                "Landmask 路径（可选）",
+                value=st.session_state.get("landmask_path", ""),
+                help="留空则使用默认 landmask"
+            )
+            st.session_state["landmask_path"] = landmask_path
+            
+            # 显示诊断信息
+            st.caption(f"AIS 密度：{'已加载' if ais_data_available else '未加载'}")
+            # 安全地显示 grid 签名
+            _grid_sig = st.session_state.get("grid_signature", "N/A")
+            _grid_sig_display = f"{_grid_sig[:20]}..." if _grid_sig != "N/A" and len(_grid_sig) > 20 else _grid_sig
+            st.caption(f"Grid 签名：{_grid_sig_display}")
+        
+        # 1.4 静态资产（Phase17）
+        with st.expander("🗂️ 静态资产", expanded=False):
+            assets_summary = _summarize_static_assets()
+            
+            if assets_summary.get("error"):
+                st.warning(f"⚠️ {assets_summary['error']}")
+            elif assets_summary.get("all_ok"):
+                st.success("✅ 所有必需资产均已就绪")
+            else:
+                if assets_summary.get("missing_required"):
+                    st.error(f"❌ 缺失必需资产：{', '.join(assets_summary['missing_required'])}")
+                if assets_summary.get("missing_optional"):
+                    st.warning(f"⚠️ 缺失可选资产：{', '.join(assets_summary['missing_optional'])}")
+            
+            # Ports 和 Corridors 预览
+            st.markdown("**Ports & Corridors**")
+            preview = _preview_ports_corridors()
+            st.caption(f"Ports: {preview.get('ports_count', 0)} 个")
+            if preview.get("ports_preview"):
+                st.caption(f"前 20 个：{preview['ports_preview'][:3]}...")
+            st.caption(f"Corridors: {preview.get('corridors_count', 0)} 条")
+            if preview.get("corridors_preview"):
+                st.caption(f"前 5 条：{preview['corridors_preview'][:2]}...")
+            
+            # Bathymetry
+            st.markdown("**Bathymetry**")
+            bathy_loaded = st.session_state.get("bathy_loaded", False)
+            st.caption(f"Bathy source: {'IBCAO v4 nc' if bathy_loaded else '未加载'}")
+            shallow_fraction = st.session_state.get("shallow_fraction")
+            if shallow_fraction is not None:
+                st.caption(f"Shallow 区域占比：{shallow_fraction:.2%}")
+        
+        # 1.5 成本权重（同步所有新增权重）
+        with st.expander("⚖️ 成本权重（完整）", expanded=False):
+            st.markdown("**已有权重**")
+            st.caption(f"w_ice: {st.session_state.get('w_ice', 4.0)}")
+            st.caption(f"w_wave: {wave_penalty}")
+            st.caption(f"w_ais: {w_ais}")
+            st.caption(f"w_ais_corridor: {w_ais_corridor}")
+            st.caption(f"w_ais_congestion: {w_ais_congestion}")
+            st.caption(f"w_edl: {w_edl if use_edl else 0.0}")
+            st.caption(f"edl_uncertainty_weight: {edl_uncertainty_weight}")
+            
+            st.markdown("**新增权重（Phase 15/17）**")
+            w_sit = st.slider(
+                "w_sit (冰厚权重)",
+                min_value=0.0,
+                max_value=10.0,
+                value=float(st.session_state.get("w_sit", 0.0)),
+                step=0.5,
+                help="海冰厚度（SIT）的成本权重"
+            )
+            st.session_state["w_sit"] = w_sit
+            
+            w_drift = st.slider(
+                "w_drift (漂移权重)",
+                min_value=0.0,
+                max_value=10.0,
+                value=float(st.session_state.get("w_drift", 0.0)),
+                step=0.5,
+                help="海冰漂移（Drift）的成本权重"
+            )
+            st.session_state["w_drift"] = w_drift
+            
+            st.markdown("**Shallow 参数**")
+            min_depth_m = st.number_input(
+                "min_depth_m (最小水深)",
+                min_value=0.0,
+                max_value=1000.0,
+                value=float(st.session_state.get("min_depth_m", 0.0)),
+                step=10.0,
+                help="留空或 0 表示不启用 shallow penalty"
+            )
+            st.session_state["min_depth_m"] = min_depth_m
+            
+            w_shallow = st.slider(
+                "w_shallow (浅水权重)",
+                min_value=0.0,
+                max_value=10.0,
+                value=float(st.session_state.get("w_shallow", 0.0)),
+                step=0.5,
+                help="仅当 min_depth_m > 0 且 w_shallow > 0 时才会加载 bathy"
+            )
+            st.session_state["w_shallow"] = w_shallow
+            
+            if w_shallow > 0 and min_depth_m > 0:
+                st.info("✓ Shallow penalty 已启用，将加载 bathymetry 数据")
+            else:
+                st.caption("Shallow penalty 未启用")
+        
+        # 1.6 规则与 POLARIS 解释（Phase6/7/10）
+        with st.expander("📜 规则与 POLARIS", expanded=False):
+            st.markdown("**规则配置**")
+            rules_config_path = st.text_input(
+                "规则配置路径",
+                value=st.session_state.get("rules_config_path", "arcticroute/config/polar_rules.yaml"),
+                help="YAML 格式的规则配置文件"
+            )
+            st.session_state["rules_config_path"] = rules_config_path
+            
+            rules_config = _load_rules_config(rules_config_path)
+            if rules_config.get("error"):
+                st.warning(f"⚠️ {rules_config['error']}")
+            else:
+                st.caption(f"已加载 {len(rules_config.get('rules', []))} 条规则")
+            
+            st.markdown("**POLARIS 沿程解释**")
+            polaris_enabled = st.session_state.get("polaris_enabled", False)
+            st.caption(f"POLARIS: {'启用' if polaris_enabled else '未启用'}")
+            
+            polaris_stats = st.session_state.get("polaris_stats", {})
+            if polaris_stats:
+                st.caption(f"RIO min: {polaris_stats.get('rio_min')}")
+                st.caption(f"RIO mean: {polaris_stats.get('rio_mean')}")
+                st.caption(f"Special fraction: {polaris_stats.get('special_fraction')}")
+                st.caption(f"Elevated fraction: {polaris_stats.get('elevated_fraction')}")
+                st.caption(f"RIV table used: {polaris_stats.get('riv_table_used')}")
+                
+                if polaris_stats.get("rio_table"):
+                    st.caption("沿程 RIO 表格（前 5 行）：")
+                    st.caption(str(polaris_stats["rio_table"][:5]))
+            else:
+                st.caption("运行后将显示 POLARIS 统计信息")
+        
         st.subheader("船舶配置")
         vessel_profiles = get_default_profiles()
         vessel_keys = list(vessel_profiles.keys())
@@ -1399,7 +1802,117 @@ def render() -> None:
             )
         
         # 完成第 3 个节点：加载环境层
-        _update_pipeline_node(2, "done", "SIC/Wave 已加载", seconds=0.2)
+        env_source = st.session_state.get("env_source", "demo")
+        env_layers = None
+        env_status = {
+            "sic_loaded": False,
+            "swh_loaded": False,
+            "sit_loaded": False,
+            "drift_loaded": False,
+            "fallback_reason": None,
+        }
+        
+        # 根据 env_source 加载环境层
+        if env_source == "demo":
+            env_status["fallback_reason"] = "env_source=demo"
+            _update_pipeline_node(2, "done", "Demo 环境", seconds=0.2)
+        elif env_source == "manual_nc":
+            # 手动指定 NC 文件
+            from arcticroute.core.env_real import RealEnvLayers
+            env_layers = RealEnvLayers(grid=grid)
+            # 尝试加载各个 NC 文件
+            try:
+                import xarray as xr
+                sic_nc = st.session_state.get("sic_nc", "")
+                swh_nc = st.session_state.get("swh_nc", "")
+                sit_nc = st.session_state.get("sit_nc", "")
+                drift_nc = st.session_state.get("drift_nc", "")
+                
+                if sic_nc and Path(sic_nc).exists():
+                    with xr.open_dataset(sic_nc) as ds:
+                        if ds.data_vars:
+                            env_layers.sic = list(ds.data_vars.values())[0].values
+                            env_status["sic_loaded"] = True
+                
+                if swh_nc and Path(swh_nc).exists():
+                    with xr.open_dataset(swh_nc) as ds:
+                        if ds.data_vars:
+                            env_layers.wave_swh = list(ds.data_vars.values())[0].values
+                            env_status["swh_loaded"] = True
+                
+                if sit_nc and Path(sit_nc).exists():
+                    with xr.open_dataset(sit_nc) as ds:
+                        if ds.data_vars:
+                            env_layers.ice_thickness_m = list(ds.data_vars.values())[0].values
+                            env_status["sit_loaded"] = True
+                
+                if drift_nc and Path(drift_nc).exists():
+                    with xr.open_dataset(drift_nc) as ds:
+                        if ds.data_vars:
+                            env_layers.drift = list(ds.data_vars.values())[0].values
+                            env_status["drift_loaded"] = True
+            except Exception as e:
+                env_status["fallback_reason"] = f"manual_nc load failed: {e}"
+                st.warning(f"手动 NC 文件加载失败：{e}")
+            
+            _update_pipeline_node(2, "done", f"Manual NC: SIC={env_status['sic_loaded']} SWH={env_status['swh_loaded']}", seconds=0.2)
+        
+        elif env_source == "cmems_latest":
+            # 使用 CMEMS 最新数据
+            env_layers = load_real_env_for_grid(grid)
+            if env_layers is None:
+                from arcticroute.core.env_real import RealEnvLayers
+                env_layers = RealEnvLayers(grid=grid)
+            
+            # 尝试从 cmems_refresh_last.json 加载 SIT 和 Drift
+            refresh, strategy = _read_cmems_status()
+            if refresh:
+                sit_path = Path(refresh.get("sit_nc", ""))
+                drift_path = Path(refresh.get("drift_nc", ""))
+                try:
+                    import xarray as xr
+                    if sit_path.exists():
+                        with xr.open_dataset(sit_path) as ds:
+                            if ds.data_vars:
+                                env_layers.ice_thickness_m = list(ds.data_vars.values())[0].values
+                                env_status["sit_loaded"] = True
+                    if drift_path.exists():
+                        with xr.open_dataset(drift_path) as ds:
+                            if ds.data_vars:
+                                env_layers.drift = list(ds.data_vars.values())[0].values
+                                env_status["drift_loaded"] = True
+                except Exception as exc:
+                    env_status["fallback_reason"] = f"cmems load failed: {exc}"
+            else:
+                env_status["fallback_reason"] = "cmems_refresh_last.json missing"
+            
+            env_status["sic_loaded"] = env_layers.sic is not None
+            env_status["swh_loaded"] = env_layers.wave_swh is not None
+            _update_pipeline_node(2, "done", f"CMEMS: SIC={env_status['sic_loaded']} SWH={env_status['swh_loaded']}", seconds=0.2)
+        
+        elif env_source == "real_archive":
+            # 使用归档真实数据
+            env_layers = load_real_env_for_grid(grid)
+            if env_layers is None or (env_layers.sic is None and env_layers.wave_swh is None):
+                env_status["fallback_reason"] = "real_archive unavailable"
+                env_layers = None
+            else:
+                env_status["sic_loaded"] = env_layers.sic is not None
+                env_status["swh_loaded"] = env_layers.wave_swh is not None
+            _update_pipeline_node(2, "done", f"Archive: SIC={env_status['sic_loaded']} SWH={env_status['swh_loaded']}", seconds=0.2)
+        
+        # 设置 env_layers 的权重
+        if env_layers is not None:
+            env_layers.w_sit = float(st.session_state.get("w_sit", 0.0))
+            env_layers.w_drift = float(st.session_state.get("w_drift", 0.0))
+        
+        # 保存 env_status 到 session_state
+        st.session_state["env_status"] = env_status
+        
+        # 如果环境层加载失败且不是 demo 模式，回退到 demo
+        if env_layers is None and env_source != "demo":
+            st.warning(f"Env load failed, falling back to demo: {env_status.get('fallback_reason')}")
+            cost_mode = "demo_icebelt"
         
         # 规划路线（使用从 EDL 模式获取的参数）
         # 启动后续 stages
@@ -1417,7 +1930,82 @@ def render() -> None:
             w_ais_corridor=w_ais_corridor,
             w_ais_congestion=w_ais_congestion,
             w_ais=w_ais,
+            # 新增参数（Phase 9/11/15/17）
+            w_ice=float(st.session_state.get("w_ice", 4.0)),
+            env_source=env_source,
+            env_layers=env_layers,
+            w_sit=float(st.session_state.get("w_sit", 0.0)),
+            w_drift=float(st.session_state.get("w_drift", 0.0)),
+            min_depth_m=min_depth_m,
+            w_shallow=float(st.session_state.get("w_shallow", 0.0)),
         )
+        
+        # 保存 planner 状态和溯源信息
+        planner_mode = st.session_state.get("planner_mode", "auto")
+        planner_used = "astar"
+        planner_fallback_reason = None
+        if planner_mode == "astar":
+            planner_used = "astar"
+        elif planner_mode == "polarroute_pipeline":
+            planner_used = "astar"
+            planner_fallback_reason = "polarroute_pipeline not wired"
+        elif planner_mode == "polarroute_external":
+            planner_used = "astar"
+            planner_fallback_reason = "polarroute_external not wired"
+        
+        st.session_state["planner_status"] = {
+            "planner_used": planner_used,
+            "fallback_reason": planner_fallback_reason,
+        }
+        
+        # 保存 bathy 和 shallow 信息
+        shallow_fraction = None
+        bathy_loaded = None
+        if cost_fields:
+            for cf in cost_fields.values():
+                if cf is None or not hasattr(cf, "meta") or cf.meta is None:
+                    continue
+                if shallow_fraction is None:
+                    shallow_fraction = cf.meta.get("shallow_fraction")
+                if bathy_loaded is None:
+                    bathy_loaded = cf.meta.get("bathy_loaded")
+                if shallow_fraction is not None and bathy_loaded is not None:
+                    break
+        
+        if shallow_fraction is not None:
+            st.session_state["shallow_fraction"] = shallow_fraction
+        else:
+            st.session_state.pop("shallow_fraction", None)
+        
+        if bathy_loaded is not None:
+            st.session_state["bathy_loaded"] = bathy_loaded
+        else:
+            st.session_state.pop("bathy_loaded", None)
+        
+        # 保存 POLARIS 统计信息（如果有）
+        polaris_stats = {
+            "rio_min": None,
+            "rio_mean": None,
+            "special_fraction": None,
+            "elevated_fraction": None,
+            "riv_table_used": None,
+            "rio_table": None,
+        }
+        st.session_state["polaris_stats"] = polaris_stats
+        
+        # 保存完整的溯源信息
+        st.session_state["run_provenance"] = {
+            "planner_used": planner_used,
+            "planner_fallback_reason": planner_fallback_reason,
+            "sic_loaded": env_status.get("sic_loaded"),
+            "swh_loaded": env_status.get("swh_loaded"),
+            "sit_loaded": env_status.get("sit_loaded"),
+            "drift_loaded": env_status.get("drift_loaded"),
+            "bathy_loaded": bathy_loaded,
+            "shallow_fraction": shallow_fraction,
+            "polaris_enabled": st.session_state.get("polaris_enabled", False),
+            "special_fraction": polaris_stats.get("special_fraction"),
+        }
         
         # 完成第 5、6 个节点
         _update_pipeline_node(4, "done", "3 种成本场", seconds=0.6)
