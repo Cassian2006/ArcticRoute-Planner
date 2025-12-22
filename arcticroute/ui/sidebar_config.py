@@ -43,7 +43,6 @@ def render_data_source_section() -> Dict[str, Any]:
         help="选择环境数据的来源"
     )
     config['env_source'] = env_source
-    st.session_state['env_source'] = env_source
     
     # CMEMS 数据层开关
     if env_source == "cmems_latest":
@@ -62,7 +61,6 @@ def render_data_source_section() -> Dict[str, Any]:
             'enable_sit': enable_sit,
             'enable_drift': enable_drift,
         }
-        st.session_state.update(config['cmems_layers'])
     
     # newenv sync 功能
     with st.expander("🔄 NewEnv 同步", expanded=False):
@@ -80,7 +78,6 @@ def render_data_source_section() -> Dict[str, Any]:
         horizontal=True,
     )
     config['grid_mode'] = grid_mode
-    st.session_state['grid_mode'] = grid_mode
     
     # 计算网格签名
     try:
@@ -92,10 +89,13 @@ def render_data_source_section() -> Dict[str, Any]:
         
         grid_signature = compute_grid_signature(current_grid)
         config['grid_signature'] = grid_signature
-        st.session_state['grid_signature'] = grid_signature
+        # 注意：grid_signature 不是 widget，可以直接设置
+        if 'grid_signature' not in st.session_state or st.session_state['grid_signature'] != grid_signature:
+            st.session_state['grid_signature'] = grid_signature
     except Exception as e:
         config['grid_signature'] = None
-        st.session_state['grid_signature'] = None
+        if 'grid_signature' not in st.session_state:
+            st.session_state['grid_signature'] = None
     
     # 成本模式
     cost_mode_options = ["demo_icebelt", "real_sic_if_available"]
@@ -106,7 +106,6 @@ def render_data_source_section() -> Dict[str, Any]:
         format_func=lambda s: "演示冰带" if s == "demo_icebelt" else "真实 SIC/波浪",
     )
     config['cost_mode'] = cost_mode
-    st.session_state['cost_mode'] = cost_mode
     
     return config
 
@@ -130,42 +129,39 @@ def render_constraints_section() -> Dict[str, Any]:
     
     # POLARIS 冰级约束
     with st.expander("🧊 POLARIS 冰级约束", expanded=False):
-        polaris_enabled = st.checkbox("启用 POLARIS", value=False, key="polaris_enabled")
+        # 从 session_state 获取默认值，避免重复设置
+        default_polaris_enabled = st.session_state.get('polaris_enabled', False)
+        polaris_enabled = st.checkbox("启用 POLARIS", value=default_polaris_enabled, key="polaris_enabled")
         config['polaris_enabled'] = polaris_enabled
-        st.session_state['polaris_enabled'] = polaris_enabled
         
         if polaris_enabled:
-            use_decayed_table = st.checkbox("使用衰减表", value=False, key="use_decayed_table")
-            hard_block_level = st.slider("硬禁区等级", 0, 5, 3, key="hard_block_level")
-            elevated_penalty_scale = st.slider("提升惩罚系数", 0.0, 10.0, 2.0, 0.5, key="elevated_penalty_scale")
+            default_use_decayed = st.session_state.get('use_decayed_table', False)
+            default_hard_block = st.session_state.get('hard_block_level', 3)
+            default_elevated = st.session_state.get('elevated_penalty_scale', 2.0)
+            
+            use_decayed_table = st.checkbox("使用衰减表", value=default_use_decayed, key="use_decayed_table")
+            hard_block_level = st.slider("硬禁区等级", 0, 5, default_hard_block, key="hard_block_level")
+            elevated_penalty_scale = st.slider("提升惩罚系数", 0.0, 10.0, default_elevated, 0.5, key="elevated_penalty_scale")
             
             config['use_decayed_table'] = use_decayed_table
             config['hard_block_level'] = hard_block_level
             config['elevated_penalty_scale'] = elevated_penalty_scale
-            
-            st.session_state.update({
-                'use_decayed_table': use_decayed_table,
-                'hard_block_level': hard_block_level,
-                'elevated_penalty_scale': elevated_penalty_scale,
-            })
     
     # 浅水约束
-    with st.expander("🌊 浅水约束", expanded=False):
-        shallow_enabled = st.checkbox("启用浅水约束", value=False, key="shallow_enabled")
+    with st.expander[object Object]约束", expanded=False):
+        default_shallow_enabled = st.session_state.get('shallow_enabled', False)
+        shallow_enabled = st.checkbox("启用浅水约束", value=default_shallow_enabled, key="shallow_enabled")
         config['shallow_enabled'] = shallow_enabled
-        st.session_state['shallow_enabled'] = shallow_enabled
         
         if shallow_enabled:
-            min_depth_m = st.number_input("最小水深 (m)", 0.0, 100.0, 10.0, 1.0, key="min_depth_m")
-            w_shallow = st.slider("浅水惩罚权重", 0.0, 10.0, 2.0, 0.5, key="w_shallow")
+            default_min_depth = st.session_state.get('min_depth_m', 10.0)
+            default_w_shallow = st.session_state.get('w_shallow', 2.0)
+            
+            min_depth_m = st.number_input("最小水深 (m)", 0.0, 100.0, default_min_depth, 1.0, key="min_depth_m")
+            w_shallow = st.slider("浅水惩罚权重", 0.0, 10.0, default_w_shallow, 0.5, key="w_shallow")
             
             config['min_depth_m'] = min_depth_m
             config['w_shallow'] = w_shallow
-            
-            st.session_state.update({
-                'min_depth_m': min_depth_m,
-                'w_shallow': w_shallow,
-            })
             
             st.caption("需要 bathymetry 数据可用")
     
@@ -213,8 +209,6 @@ def render_cost_components_section() -> Dict[str, Any]:
         
         config['w_ais_corridor'] = w_ais_corridor
         config['w_ais_congestion'] = w_ais_congestion
-        st.session_state['w_ais_corridor'] = w_ais_corridor
-        st.session_state['w_ais_congestion'] = w_ais_congestion
         
         # 旧版兼容
         w_ais = st.slider(
@@ -225,7 +219,6 @@ def render_cost_components_section() -> Dict[str, Any]:
             key="w_ais_slider"
         )
         config['w_ais'] = w_ais
-        st.session_state['w_ais'] = w_ais
         
         # AIS 密度文件选择
         grid_sig = st.session_state.get("grid_signature")
@@ -256,7 +249,9 @@ def render_cost_components_section() -> Dict[str, Any]:
         
         ais_density_path = ais_path_map.get(ais_choice)
         config['ais_density_path'] = ais_density_path
-        st.session_state['ais_density_path'] = ais_density_path
+        # ais_density_path 不是 widget key，可以安全设置
+        if 'ais_density_path' not in st.session_state or st.session_state['ais_density_path'] != ais_density_path:
+            st.session_state['ais_density_path'] = ais_density_path
         
         # 显示当前选中的文件和 grid_signature
         if ais_density_path:
@@ -273,7 +268,6 @@ def render_cost_components_section() -> Dict[str, Any]:
         key="wave_penalty_slider"
     )
     config['wave_penalty'] = wave_penalty
-    st.session_state['wave_penalty'] = wave_penalty
     
     # EDL 成本
     with st.expander("🧠 EDL 风险成本", expanded=False):
@@ -294,8 +288,6 @@ def render_cost_components_section() -> Dict[str, Any]:
         
         config['w_edl'] = w_edl
         config['edl_uncertainty_weight'] = edl_uncertainty_weight
-        st.session_state['w_edl'] = w_edl
-        st.session_state['edl_uncertainty_weight'] = edl_uncertainty_weight
     
     return config
 
@@ -326,7 +318,6 @@ def render_planner_backend_section() -> Dict[str, Any]:
     )
     
     config['planner_backend'] = planner_backend
-    st.session_state['planner_backend'] = planner_backend
     
     st.caption(f"当前: {planner_backend}")
     
