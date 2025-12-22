@@ -63,6 +63,11 @@ diagnostics/
 *.h5
 *.hdf5
 
+# 静态资源深度利用补充
+data/static_assets/
+data/static_assets/**
+reports/static_assets_doctor.json
+
 # 临时文件
 *.tmp
 *.log

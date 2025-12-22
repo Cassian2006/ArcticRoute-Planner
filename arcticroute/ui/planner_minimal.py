@@ -13,6 +13,7 @@ Phase 3：三方案 demo Planner，支持 efficient / edl_safe / edl_robust 三�
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, field
 from typing import Any, Dict
 from pathlib import Path
@@ -35,10 +36,19 @@ from arcticroute.core.cost import (
     discover_ais_density_candidates,
     compute_grid_signature,
 )
-from arcticroute.core.env_real import load_real_env_for_grid
+from arcticroute.core.env_real import (
+    load_real_env_for_grid,
+    resolve_env_files_for_ym,
+    get_data_root,
+)
 from arcticroute.core.astar import plan_route_latlon
 from arcticroute.core.analysis import compute_route_cost_breakdown, compute_route_profile
-from arcticroute.core.eco.vessel_profiles import get_default_profiles, VesselProfile
+from arcticroute.core.eco.vessel_profiles import (
+    get_profile_catalog,
+    get_ice_class_options,
+    IceClass,
+    VesselProfile,
+)
 from arcticroute.core.eco.eco_model import estimate_route_eco
 
 # 导入共享配置
@@ -55,6 +65,8 @@ from arcticroute.ui.components import (
     get_pipeline,
 )
 
+# shell skin injector
+from arcticroute.ui.shell_skin import inject_shell_css
 # 导入流动管线 UI 组件
 from arcticroute.ui.components.pipeline_flow import (
     PipeNode,
@@ -72,6 +84,24 @@ ROUTE_LABELS_ZH = {
     "edl_safe": "风险均衡",
     "edl_robust": "稳健安全",
 }
+
+
+PAGES = [
+    ("overview", "??"),
+    ("env", "??"),
+    ("plan", "??"),
+    ("results", "??"),
+    ("cost", "????"),
+    ("polaris", "POLARIS"),
+    ("pareto", "Pareto"),
+    ("polarroute", "PolarRoute"),
+    ("ablation", "Ablation"),
+    ("logs", "?????"),
+    ("settings", "??"),
+    ("sc1", "Showcase 1??????"),
+    ("sc3", "Showcase 3?????"),
+    ("sc4", "Showcase 4?????"),
+]
 
 # ============================================================================
 # 北极固定视角 + 地图控制器配置
@@ -634,7 +664,273 @@ def plan_three_routes(
     return routes_list, cost_fields, meta, scores_by_key, recommended_key
 
 
-def render() -> None:
+
+
+def _get_last_plan_result() -> Dict[str, Any] | None:
+    return st.session_state.get("last_plan_result")
+
+
+def render_overview() -> None:
+    st.header("??")
+    last = _get_last_plan_result()
+    if not last:
+        st.warning("??????????????????????")
+        return
+
+    routes_info = last.get("routes_info") or []
+    rows = []
+    for idx, info in enumerate(routes_info):
+        key = ROUTE_PROFILES[idx]["key"] if idx < len(ROUTE_PROFILES) else f"route_{idx}"
+        rows.append({
+            "key": key,
+            "label": getattr(info, "label", key),
+            "reachable": getattr(info, "reachable", False),
+            "distance_km": getattr(info, "approx_length_km", None),
+        })
+
+    if rows:
+        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+    else:
+        st.warning("??????????")
+
+    recommended_key = last.get("recommended_key")
+    if recommended_key:
+        st.info(f"?????{recommended_key}")
+
+
+def render_env() -> None:
+    st.header("??")
+    ym = st.session_state.get("ym", "2025-02")
+    st.caption(f"???????{ym}")
+
+    try:
+        env_files = resolve_env_files_for_ym(ym)
+        status_rows = [
+            {"asset": "Grid", "count": len(env_files.grid_files)},
+            {"asset": "SIC", "count": len(env_files.sic_files)},
+            {"asset": "SWH", "count": len(env_files.wave_files)},
+            {"asset": "Landmask", "count": len(env_files.landmask_files)},
+        ]
+        data_root = get_data_root()
+        sit_candidates = [
+            data_root / "data_processed" / "newenv" / "ice_thickness.nc",
+            data_root / "data_processed" / "newenv" / "ice_thickness_m.nc",
+        ]
+        drift_candidates = [
+            data_root / "data_processed" / "newenv" / "ice_drift.nc",
+            data_root / "data_processed" / "newenv" / "drift.nc",
+        ]
+        status_rows.append({"asset": "SIT", "count": sum(p.exists() for p in sit_candidates)})
+        status_rows.append({"asset": "Drift", "count": sum(p.exists() for p in drift_candidates)})
+        st.dataframe(pd.DataFrame(status_rows), use_container_width=True)
+    except Exception as exc:
+        st.warning(f"?????????{exc}")
+
+    try:
+        ais_files = list_available_ais_density_files()
+        st.caption(f"AIS density ???{len(ais_files)}")
+    except Exception as exc:
+        st.warning(f"AIS density ?????{exc}")
+
+    st.subheader("????")
+    st.warning("????/?????????Phase17 ???????")
+
+
+def render_results() -> None:
+    st.header("??")
+    last = _get_last_plan_result()
+    if not last:
+        st.warning("??????????????????????")
+        return
+
+    routes_info = last.get("routes_info") or []
+    if not routes_info:
+        st.warning("??????????")
+        return
+
+    rows = []
+    for idx, info in enumerate(routes_info):
+        key = ROUTE_PROFILES[idx]["key"] if idx < len(ROUTE_PROFILES) else f"route_{idx}"
+        rows.append({
+            "key": key,
+            "label": getattr(info, "label", key),
+            "reachable": getattr(info, "reachable", False),
+            "distance_km": getattr(info, "approx_length_km", None),
+        })
+
+    df = pd.DataFrame(rows)
+    st.dataframe(df, use_container_width=True)
+    st.download_button(
+        "?????? (CSV)",
+        data=df.to_csv(index=False).encode("utf-8"),
+        file_name="route_results_summary.csv",
+        mime="text/csv",
+    )
+
+
+def render_cost() -> None:
+    st.header("????")
+    last = _get_last_plan_result()
+    if not last:
+        st.warning("??????????????????????")
+        return
+
+    grid = last.get("grid")
+    cost_fields = last.get("cost_fields") or {}
+    routes_info = last.get("routes_info") or []
+    if grid is None or not cost_fields or not routes_info:
+        st.warning("????????????????????")
+        return
+
+    include_shallow = st.checkbox("???? (IBCAO)", value=False)
+    shallow_weight = 0.0
+    if include_shallow:
+        shallow_weight = st.slider("??????", 0.0, 10.0, 2.0, 0.5)
+        st.warning("???????????????????")
+
+    breakdown_rows = []
+    component_keys: set[str] = set()
+    for idx, info in enumerate(routes_info):
+        if not getattr(info, "reachable", False):
+            continue
+        profile_key = ROUTE_PROFILES[idx]["key"] if idx < len(ROUTE_PROFILES) else f"route_{idx}"
+        cost_field = cost_fields.get(profile_key)
+        if cost_field is None:
+            continue
+        breakdown = compute_route_cost_breakdown(grid, cost_field, info.coords)
+        row = {"key": profile_key, "total_cost": breakdown.total_cost}
+        for comp_key, comp_val in breakdown.component_totals.items():
+            row[comp_key] = comp_val
+            component_keys.add(comp_key)
+        if include_shallow:
+            row["shallow_penalty"] = shallow_weight * 0.0
+            component_keys.add("shallow_penalty")
+        breakdown_rows.append(row)
+
+    if not breakdown_rows:
+        st.warning("???????????")
+        return
+
+    component_keys = sorted(component_keys)
+    selected_components = st.multiselect(
+        "????", component_keys, default=component_keys
+    )
+    cols = ["key", "total_cost"] + selected_components
+    st.dataframe(pd.DataFrame(breakdown_rows)[cols], use_container_width=True)
+
+
+def _find_latest_report(patterns: tuple[str, ...]) -> Path | None:
+    reports_dir = Path("reports")
+    if not reports_dir.exists():
+        return None
+    matches = []
+    for pattern in patterns:
+        matches.extend(reports_dir.rglob(pattern))
+    if not matches:
+        return None
+    return max(matches, key=lambda p: p.stat().st_mtime)
+
+
+def render_polaris() -> None:
+    st.header("POLARIS")
+    report = _find_latest_report(("*polaris*.csv",))
+    if not report:
+        st.warning("?? POLARIS ???????? polaris_diagnostics.csv ?????")
+        return
+    try:
+        df = pd.read_csv(report)
+        st.caption(f"???{report}")
+        st.dataframe(df, use_container_width=True)
+    except Exception as exc:
+        st.warning(f"POLARIS ?????{exc}")
+
+
+def render_pareto() -> None:
+    st.header("Pareto")
+    report = _find_latest_report(("*pareto*.csv",))
+    if not report:
+        st.warning("?? Pareto ?????? pareto_front.csv ?????")
+        return
+    try:
+        df = pd.read_csv(report)
+        st.caption(f"???{report}")
+        st.dataframe(df, use_container_width=True)
+    except Exception as exc:
+        st.warning(f"Pareto ?????{exc}")
+
+
+def render_polarroute() -> None:
+    st.header("PolarRoute")
+    report = _find_latest_report(("*polarroute*.txt", "*polarroute*.md", "*summary*.txt"))
+    if not report:
+        st.warning("?? PolarRoute pipeline ???fallback_reason: no_pipeline_output")
+        return
+    try:
+        st.caption(f"???{report}")
+        st.text(report.read_text(encoding="utf-8", errors="ignore"))
+    except Exception as exc:
+        st.warning(f"PolarRoute ???????{exc}")
+
+
+def render_ablation() -> None:
+    st.header("Ablation")
+    report = _find_latest_report(("*ablation*.csv", "*ablation*.txt"))
+    if not report:
+        st.warning("?? Ablation ??????????????")
+        return
+    try:
+        if report.suffix.lower() == ".csv":
+            df = pd.read_csv(report)
+            st.caption(f"???{report}")
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.caption(f"???{report}")
+            st.text(report.read_text(encoding="utf-8", errors="ignore"))
+    except Exception as exc:
+        st.warning(f"Ablation ?????{exc}")
+
+
+def render_logs() -> None:
+    st.header("?????")
+    reports_dir = Path("reports")
+    if not reports_dir.exists():
+        st.warning("reports/ ??????")
+        return
+
+    candidates = sorted(reports_dir.rglob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
+    files = [p for p in candidates if p.is_file()][:50]
+    if not files:
+        st.warning("reports/ ????????")
+        return
+
+    selected = st.selectbox("????", options=files, format_func=lambda p: str(p))
+    if selected.suffix.lower() == ".csv":
+        try:
+            st.dataframe(pd.read_csv(selected), use_container_width=True)
+        except Exception as exc:
+            st.warning(f"CSV ?????{exc}")
+    else:
+        st.text(selected.read_text(encoding="utf-8", errors="ignore"))
+
+
+def render_settings() -> None:
+    st.header("??")
+    data_root = get_data_root()
+    manifest = Path("FILES_MANIFEST.md")
+
+    st.markdown(f"- ARCTICROUTE_DATA_ROOT: `{os.getenv('ARCTICROUTE_DATA_ROOT', '')}`")
+    st.markdown(f"- data root: `{data_root}`")
+    st.markdown(f"- reports: `{Path('reports')}`")
+    if manifest.exists():
+        st.markdown(f"- manifest: `{manifest}`")
+    else:
+        st.warning("??? FILES_MANIFEST.md")
+
+
+def render_showcase(tag: str) -> None:
+    st.header(tag)
+    st.info("????????????????????????")
+def render_plan() -> None:
     """
     渲染三方案规划器 UI。
     
@@ -1064,19 +1360,36 @@ def render() -> None:
             f"权重分配：燃油 {weight_fuel:.1%} | 风险 {weight_risk:.1%} | 不确定性 {weight_uncertainty:.1%}"
         )
         
-        st.subheader("船舶配置")
-        vessel_profiles = get_default_profiles()
-        vessel_keys = list(vessel_profiles.keys())
+        st.subheader("????")
+        vessel_catalog = get_profile_catalog()
+        vessel_keys = list(vessel_catalog.keys())
         vessel_default = st.session_state.get("vessel_profile", vessel_keys[0] if vessel_keys else None)
-        if vessel_default not in vessel_keys:
+        if vessel_default not in vessel_keys and vessel_keys:
             vessel_default = vessel_keys[0]
         selected_vessel_key = st.selectbox(
-            "选择船型",
+            "????",
             options=vessel_keys,
             index=vessel_keys.index(vessel_default),
-            format_func=lambda k: f"{vessel_profiles[k].name} ({k})",
+            format_func=lambda k: f"{vessel_catalog[k].name} ({k})",
         )
-        selected_vessel = vessel_profiles[selected_vessel_key]
+        selected_vessel = vessel_catalog[selected_vessel_key]
+
+        if selected_vessel.ice_class is None:
+            ice_options = get_ice_class_options()
+            ice_keys = list(ice_options.keys())
+            default_ice = ice_keys[0] if ice_keys else IceClass.NO_ICE_CLASS.value
+            selected_ice_key = st.selectbox(
+                "????",
+                options=ice_keys,
+                index=ice_keys.index(default_ice) if default_ice in ice_keys else 0,
+                format_func=lambda k: ice_options.get(k, k),
+            )
+            if selected_vessel.vessel_type is None:
+                st.warning("??????? vessel_type??????????")
+            else:
+                combo_key = f"{selected_vessel.vessel_type.value}_{selected_ice_key}"
+                selected_vessel = vessel_catalog.get(combo_key, selected_vessel)
+                selected_vessel_key = selected_vessel.key
         
         # ====================================================================
         # 任务 C：Health Check - 添加 AIS density grid_signature 验证
@@ -3182,6 +3495,12 @@ def render() -> None:
         'cost_meta': cost_meta,
         'scores_by_key': scores_by_key,
         'recommended_key': recommended_key,
+        'grid': grid,
+        'grid_source_label': grid_source_label,
+        'selected_vessel_key': selected_vessel_key,
+        'selected_scenario_name': selected_scenario_name,
+        'selected_edl_mode': selected_edl_mode,
+        'cost_mode': cost_mode,
     }
     
     # 规划完成后自动折叠 pipeline
@@ -3314,3 +3633,57 @@ def render() -> None:
                     st.info(f"可视化失败: {e}")
         else:
             st.info("reports/scenario_suite_results.csv 暂未生成，无法展示批量结果。")
+
+
+
+def render() -> None:
+    if not st.session_state.get("_ar_page_config_set"):
+        st.set_page_config(
+            page_title="ArcticRoute Planner",
+            layout="wide",
+            initial_sidebar_state="expanded",
+        )
+        st.session_state["_ar_page_config_set"] = True
+
+    inject_shell_css()
+
+    page_labels = dict(PAGES)
+    with st.sidebar:
+        st.markdown("## ArcticRoute")
+        page = st.radio(
+            "??",
+            options=[p[0] for p in PAGES],
+            format_func=lambda k: page_labels.get(k, k),
+        )
+        st.session_state["page"] = page
+
+    if page == "overview":
+        render_overview()
+    elif page == "env":
+        render_env()
+    elif page == "plan":
+        render_plan()
+    elif page == "results":
+        render_results()
+    elif page == "cost":
+        render_cost()
+    elif page == "polaris":
+        render_polaris()
+    elif page == "pareto":
+        render_pareto()
+    elif page == "polarroute":
+        render_polarroute()
+    elif page == "ablation":
+        render_ablation()
+    elif page == "logs":
+        render_logs()
+    elif page == "settings":
+        render_settings()
+    elif page == "sc1":
+        render_showcase("Showcase 1??????")
+    elif page == "sc3":
+        render_showcase("Showcase 3?????")
+    elif page == "sc4":
+        render_showcase("Showcase 4?????")
+    else:
+        render_overview()

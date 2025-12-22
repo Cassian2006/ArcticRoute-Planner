@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from arcticroute.ui import home, planner_minimal, eval_results
+from arcticroute.ui.shell_skin import inject_shell_css
 
 
 def inject_global_style() -> None:
@@ -54,6 +55,7 @@ def main() -> None:
     )
     st.session_state["_ar_page_config_set"] = True
     inject_global_style()
+    inject_shell_css()
 
     page = st.sidebar.radio(
         "页面导航",
