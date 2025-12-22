@@ -637,7 +637,8 @@ def plan_three_routes(
             print(f"[DEBUG ROUTE] #{i} key={key} missing in routes_info")
     print("[DEBUG ROUTES] ===== End Route Planning =====\n")
     
-    return routes_list, cost_fields, meta, scores_by_key, recommended_key
+    # 返回字典而不是列表，保持与类型注解一致
+    return routes_info, cost_fields, meta, scores_by_key, recommended_key
 
 
 def render() -> None:
