@@ -67,6 +67,9 @@ from arcticroute.ui.sidebar_config import (
     render_run_summary_panel,
 )
 
+# 导入船舶选择器
+from arcticroute.ui.vessel_selector import render_vessel_selector
+
 ROUTE_COLORS = {
     "efficient": [56, 189, 248],
     "edl_safe": [251, 146, 60],
@@ -317,7 +320,7 @@ def plan_three_routes(
     w_ais_corridor: float = 0.0,
     w_ais_congestion: float = 0.0,
     w_ais: float | None = None,
-) -> tuple[dict[str, RouteInfo], dict, dict, dict, str]:
+) -> tuple[list[RouteInfo], dict, dict, dict, str]:
     """
     规划三条路线：efficient / edl_safe / edl_robust（使用 ROUTE_PROFILES 定义的个性化权重）。
     
@@ -637,8 +640,15 @@ def plan_three_routes(
             print(f"[DEBUG ROUTE] #{i} key={key} missing in routes_info")
     print("[DEBUG ROUTES] ===== End Route Planning =====\n")
     
-    # 返回字典而不是列表，保持与类型注解一致
-    return routes_info, cost_fields, meta, scores_by_key, recommended_key
+    # 组装按定义顺序的列表返回，方便测试使用索引访问
+    routes_list = []
+    for profile in ROUTE_PROFILES:
+        key = profile["key"]
+        r = routes_info.get(key)
+        if r is not None:
+            routes_list.append(r)
+    
+    return routes_list, cost_fields, meta, scores_by_key, recommended_key
 
 
 def render() -> None:
@@ -767,16 +777,17 @@ def render() -> None:
             allow_diag = st.checkbox("允许对角线", value=True, key="allow_diag_unified")
             st.session_state["allow_diag"] = allow_diag
             
-            # 船舶选择
-            vessel_options = list(vessel_profiles.keys())
-            selected_vessel_key = st.selectbox(
-                "船舶类型",
-                options=vessel_options,
-                index=vessel_options.index(selected_vessel_key) if selected_vessel_key in vessel_options else 0,
-                key="vessel_selector_unified"
-            )
-            st.session_state["vessel_profile"] = selected_vessel_key
-            selected_vessel = vessel_profiles[selected_vessel_key]
+            # 船舶选择 - 使用新的 vessel_selector
+            profile_key, ice_label, vessel_meta = render_vessel_selector(key_prefix="unified_vessel")
+            st.session_state["vessel_profile_key"] = profile_key
+            st.session_state["vessel_profile"] = profile_key  # 保持向后兼容
+            st.session_state["vessel_meta"] = vessel_meta
+            st.session_state["ice_class_label"] = ice_label
+            
+            # 获取船舶对象
+            vessel_profiles = get_default_profiles()
+            selected_vessel_key = profile_key
+            selected_vessel = vessel_profiles.get(profile_key, list(vessel_profiles.values())[0])
             
             # EDL 模式选择
             edl_modes = list_edl_modes()
@@ -1202,16 +1213,15 @@ def render() -> None:
         st.subheader("船舶配置")
         vessel_profiles = get_default_profiles()
         vessel_keys = list(vessel_profiles.keys())
-        vessel_default = st.session_state.get("vessel_profile", vessel_keys[0] if vessel_keys else None)
-        if vessel_default not in vessel_keys:
-            vessel_default = vessel_keys[0]
-        selected_vessel_key = st.selectbox(
-            "选择船型",
-            options=vessel_keys,
-            index=vessel_keys.index(vessel_default),
-            format_func=lambda k: f"{vessel_profiles[k].name} ({k})",
-        )
-        selected_vessel = vessel_profiles[selected_vessel_key]
+        # 使用新的 vessel_selector
+        profile_key, ice_label, vessel_meta = render_vessel_selector(key_prefix="legacy_vessel")
+        st.session_state["vessel_profile_key"] = profile_key
+        st.session_state["vessel_profile"] = profile_key  # 保持向后兼容
+        st.session_state["vessel_meta"] = vessel_meta
+        st.session_state["ice_class_label"] = ice_label
+        
+        selected_vessel_key = profile_key
+        selected_vessel = vessel_profiles.get(profile_key, list(vessel_profiles.values())[0])
         
         # ====================================================================
         # 任务 C：Health Check - 添加 AIS density grid_signature 验证
@@ -1542,7 +1552,7 @@ def render() -> None:
         # 更新第 5 个节点：构建成本场
         _update_pipeline_node(4, "running", "构建成本场...")
         
-        routes_info, cost_fields, cost_meta, scores_by_key, recommended_key = plan_three_routes(
+        routes_list, cost_fields, cost_meta, scores_by_key, recommended_key = plan_three_routes(
             grid, land_mask, start_lat, start_lon, end_lat, end_lon, allow_diag, selected_vessel, cost_mode, wave_penalty, use_edl, w_edl,
             weight_risk=weight_risk, weight_uncertainty=weight_uncertainty, weight_fuel=weight_fuel,
             edl_uncertainty_weight=edl_uncertainty_weight,
@@ -1553,6 +1563,9 @@ def render() -> None:
             w_ais_congestion=w_ais_congestion,
             w_ais=w_ais,
         )
+        
+        # 将列表转换为字典，方便后续使用
+        routes_info = {route.mode: route for route in routes_list}
         
         # 完成第 5、6 个节点
         _update_pipeline_node(4, "done", "3 种成本场", seconds=0.6)
@@ -1612,6 +1625,14 @@ def render() -> None:
             'edl_uncertainty_weight': edl_uncertainty_weight,
             'grid_signature': sidebar_config.get('grid_signature'),
         })
+    
+    # 添加船舶信息到 cost_meta
+    vessel_meta = st.session_state.get('vessel_meta', {})
+    cost_meta.update({
+        'vessel_profile_key': st.session_state.get('vessel_profile_key', ''),
+        'ice_class_label': st.session_state.get('ice_class_label', ''),
+        'vessel_profile': vessel_meta.get('vessel_profile', None),
+    })
     
     # 渲染运行摘要面板
     # 获取第一个可达路线的成本分解用于展示
