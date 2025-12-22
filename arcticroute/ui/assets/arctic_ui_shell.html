@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArcticRoute Shell</title>
+    <style>
+        /* ========== ArcticRoute UI Shell CSS ========== */
+        /* 全局变量 */
+        :root {
+            --bg-primary: #020617;
+            --bg-secondary: #0f172a;
+            --bg-card: #0b1120;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #f9fafb;
+            --text-secondary: #e5e7eb;
+            --text-muted: #9fb2c0;
+            --accent-blue: #38bdf8;
+            --accent-cyan: #22d3ee;
+            --accent-green: #10b981;
+            --accent-orange: #f59e0b;
+            --accent-red: #ef4444;
+        }
+
+        /* 隐藏 Streamlit 默认元素 */
+        header[data-testid="stHeader"] {
+            display: none !important;
+        }
+        
+        footer {
+            display: none !important;
+        }
+        
+        #MainMenu {
+            visibility: hidden !important;
+        }
+
+        /* 全局背景和字体 */
+        [data-testid="stAppViewContainer"] {
+            background: var(--bg-primary) !important;
+            color: var(--text-primary) !important;
+        }
+
+        [data-testid="stSidebar"] {
+            background: var(--bg-secondary) !important;
+        }
+
+        /* 主容器 */
+        .main .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            max-width: 1400px;
+        }
+
+        /* 卡片样式 */
+        .card, .ar-card {
+            background: var(--bg-card);
+            border-radius: 14px;
+            padding: 1.5rem;
+            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+            border: 1px solid var(--border-color);
+            margin-bottom: 1rem;
+        }
+
+        .cover-card {
+            background: linear-gradient(135deg, var(--bg-secondary), var(--bg-primary));
+            border: 1px solid var(--border-color);
+            border-radius: 18px;
+            padding: 2rem;
+        }
+
+        /* 按钮样式 */
+        .btn, .stButton > button {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan)) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 8px !important;
+            padding: 0.75rem 1.5rem !important;
+            font-weight: 600 !important;
+            cursor: pointer !important;
+            transition: all 0.3s ease !important;
+            text-decoration: none !important;
+            display: inline-block !important;
+        }
+
+        .btn:hover, .stButton > button:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 8px 20px rgba(56, 189, 248, 0.4) !important;
+        }
+
+        /* 输入框样式 */
+        .stTextInput > div > div > input,
+        .stNumberInput > div > div > input,
+        .stSelectbox > div > div > select {
+            background: var(--bg-card) !important;
+            color: var(--text-primary) !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 8px !important;
+        }
+
+        /* 数据框样式 */
+        .stDataFrame {
+            font-size: 0.9rem;
+        }
+
+        .stDataFrame [data-testid="stDataFrameResizable"] {
+            background: var(--bg-card) !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 8px !important;
+        }
+
+        /* 标题样式 */
+        h1, h2, h3 {
+            color: var(--text-primary) !important;
+        }
+
+        /* Expander 样式 */
+        .streamlit-expanderHeader {
+            background: var(--bg-card) !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 8px !important;
+            color: var(--text-primary) !important;
+        }
+
+        /* Metric 卡片样式 */
+        [data-testid="stMetricValue"] {
+            color: var(--accent-cyan) !important;
+            font-weight: 700 !important;
+        }
+
+        [data-testid="stMetricLabel"] {
+            color: var(--text-secondary) !important;
+        }
+
+        /* Tab 样式 */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 8px;
+            background: transparent !important;
+        }
+
+        .stTabs [data-baseweb="tab"] {
+            background: var(--bg-card) !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 8px !important;
+            color: var(--text-secondary) !important;
+            padding: 0.5rem 1rem !important;
+        }
+
+        .stTabs [aria-selected="true"] {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan)) !important;
+            color: white !important;
+        }
+
+        /* Radio 样式 */
+        .stRadio > label {
+            color: var(--text-primary) !important;
+        }
+
+        /* Slider 样式 */
+        .stSlider > div > div > div {
+            background: var(--accent-blue) !important;
+        }
+
+        /* 警告/信息框样式 */
+        .stAlert {
+            background: var(--bg-card) !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 8px !important;
+            color: var(--text-primary) !important;
+        }
+
+        /* 进度条样式 */
+        .stProgress > div > div > div {
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan)) !important;
+        }
+
+        /* Spinner 样式 */
+        .stSpinner > div {
+            border-top-color: var(--accent-cyan) !important;
+        }
+
+        /* 侧边栏样式优化 */
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
+            color: var(--text-primary) !important;
+        }
+
+        /* 链接样式 */
+        a {
+            color: var(--accent-cyan) !important;
+            text-decoration: none !important;
+        }
+
+        a:hover {
+            color: var(--accent-blue) !important;
+            text-decoration: underline !important;
+        }
+
+        /* 代码块样式 */
+        code {
+            background: var(--bg-card) !important;
+            color: var(--accent-cyan) !important;
+            padding: 0.2rem 0.4rem !important;
+            border-radius: 4px !important;
+        }
+
+        /* 表格样式 */
+        table {
+            background: var(--bg-card) !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 8px !important;
+        }
+
+        th {
+            background: var(--bg-secondary) !important;
+            color: var(--text-primary) !important;
+        }
+
+        td {
+            color: var(--text-secondary) !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- 这个 HTML 文件仅用于提供 CSS 样式，不包含导航 HTML -->
+    <!-- Streamlit 将提取 <style> 标签内的 CSS 并注入到页面中 -->
+</body>
+</html>
+
