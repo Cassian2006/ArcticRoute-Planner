@@ -61,6 +61,12 @@ from arcticroute.ui.components.pipeline_flow import (
     render_pipeline as render_pipeline_flow,
 )
 
+# Phase UI-1: 导入新的侧边栏配置模块
+from arcticroute.ui.sidebar_config import (
+    render_sidebar_unified,
+    render_run_summary_panel,
+)
+
 ROUTE_COLORS = {
     "efficient": [56, 189, 248],
     "edl_safe": [251, 146, 60],
@@ -661,10 +667,138 @@ def render() -> None:
 
     ais_density_path: Path | None = None
 
-    # 左侧栏参数输入
-    with st.sidebar:
-        status_box = st.container()
-        st.header("规划参数")
+    # Phase UI-1: 使用新的统一侧边栏配置
+    # 检查是否使用新版侧边栏
+    use_unified_sidebar = st.session_state.get("use_unified_sidebar", True)
+    
+    if use_unified_sidebar:
+        # 使用新的四大区块侧边栏
+        sidebar_config = render_sidebar_unified()
+        
+        # 从配置中提取变量（保持向后兼容）
+        grid_mode = sidebar_config.get('grid_mode', 'demo')
+        cost_mode = sidebar_config.get('cost_mode', 'demo_icebelt')
+        wave_penalty = sidebar_config.get('wave_penalty', 2.0)
+        w_ais_corridor = sidebar_config.get('w_ais_corridor', 2.0)
+        w_ais_congestion = sidebar_config.get('w_ais_congestion', 1.0)
+        w_ais = sidebar_config.get('w_ais', 0.0)
+        ais_density_path = sidebar_config.get('ais_density_path')
+        
+        # 从 session_state 获取其他必要参数
+        start_lat = st.session_state.get("start_lat", 66.0)
+        start_lon = st.session_state.get("start_lon", 5.0)
+        end_lat = st.session_state.get("end_lat", 78.0)
+        end_lon = st.session_state.get("end_lon", 150.0)
+        allow_diag = st.session_state.get("allow_diag", True)
+        selected_vessel_key = st.session_state.get("vessel_profile", "PC6")
+        selected_edl_mode = st.session_state.get("selected_edl_mode", "edl_safe")
+        selected_scenario_id = st.session_state.get("selected_scenario_id", "manual")
+        selected_scenario_name = selected_scenario_id
+        
+        # EDL 参数
+        edl_mode_config = EDL_MODES.get(selected_edl_mode, {})
+        use_edl = edl_mode_config.get("use_edl", False)
+        w_edl = sidebar_config.get('w_edl', edl_mode_config.get("w_edl", 0.0))
+        edl_uncertainty_weight = sidebar_config.get('edl_uncertainty_weight', edl_mode_config.get("edl_uncertainty_weight", 0.0))
+        use_edl_uncertainty = edl_mode_config.get("use_edl_uncertainty", False)
+        
+        # 权重参数（多目标）
+        weight_risk = st.session_state.get("weight_risk", 0.5)
+        weight_uncertainty = st.session_state.get("weight_uncertainty", 0.3)
+        weight_fuel = st.session_state.get("weight_fuel", 0.2)
+        
+        # 获取船舶配置
+        vessel_profiles = get_default_profiles()
+        selected_vessel = vessel_profiles.get(selected_vessel_key, list(vessel_profiles.values())[0])
+        
+        # AIS 权重启用状态
+        ais_weights_enabled = any(weight > 0 for weight in [w_ais, w_ais_corridor, w_ais_congestion])
+        
+        # 在主区域添加场景和起止点输入
+        with st.sidebar:
+            st.markdown("---")
+            st.subheader("📍 场景与坐标")
+            
+            # 场景选择
+            scenarios_map = {}
+            try:
+                scenarios_map = load_all_scenarios()
+            except Exception:
+                pass
+            
+            scenario_options = ["manual"] + list(scenarios_map.keys())
+            selected_scenario_id = st.selectbox(
+                "预设场景",
+                options=scenario_options,
+                index=0,
+                format_func=lambda sid: "手动输入" if sid == "manual" else f"{sid}",
+                key="scenario_selector_unified"
+            )
+            st.session_state["selected_scenario_id"] = selected_scenario_id
+            
+            if selected_scenario_id != "manual" and selected_scenario_id in scenarios_map:
+                scen = scenarios_map[selected_scenario_id]
+                st.session_state["start_lat"] = scen.start_lat
+                st.session_state["start_lon"] = scen.start_lon
+                st.session_state["end_lat"] = scen.end_lat
+                st.session_state["end_lon"] = scen.end_lon
+                start_lat, start_lon = scen.start_lat, scen.start_lon
+                end_lat, end_lon = scen.end_lat, scen.end_lon
+                st.caption(f"{scen.description}")
+            
+            # 起止点输入
+            col1, col2 = st.columns(2)
+            with col1:
+                start_lat = st.number_input("起点纬度", 60.0, 85.0, start_lat, 0.1, key="start_lat_unified")
+                start_lon = st.number_input("起点经度", -180.0, 180.0, start_lon, 0.1, key="start_lon_unified")
+            with col2:
+                end_lat = st.number_input("终点纬度", 60.0, 85.0, end_lat, 0.1, key="end_lat_unified")
+                end_lon = st.number_input("终点经度", -180.0, 180.0, end_lon, 0.1, key="end_lon_unified")
+            
+            st.session_state.update({
+                "start_lat": start_lat,
+                "start_lon": start_lon,
+                "end_lat": end_lat,
+                "end_lon": end_lon,
+            })
+            
+            # 其他配置
+            allow_diag = st.checkbox("允许对角线", value=True, key="allow_diag_unified")
+            st.session_state["allow_diag"] = allow_diag
+            
+            # 船舶选择
+            vessel_options = list(vessel_profiles.keys())
+            selected_vessel_key = st.selectbox(
+                "船舶类型",
+                options=vessel_options,
+                index=vessel_options.index(selected_vessel_key) if selected_vessel_key in vessel_options else 0,
+                key="vessel_selector_unified"
+            )
+            st.session_state["vessel_profile"] = selected_vessel_key
+            selected_vessel = vessel_profiles[selected_vessel_key]
+            
+            # EDL 模式选择
+            edl_modes = list_edl_modes()
+            selected_edl_mode = st.selectbox(
+                "EDL 模式",
+                options=edl_modes,
+                index=edl_modes.index(selected_edl_mode) if selected_edl_mode in edl_modes else 0,
+                format_func=lambda m: EDL_MODES[m].get("display_name", m),
+                key="edl_mode_selector_unified"
+            )
+            st.session_state["selected_edl_mode"] = selected_edl_mode
+            
+            # 状态框
+            status_box = st.container()
+            
+            # 规划按钮
+            do_plan = st.button("🚀 开始规划", type="primary", key="plan_button_unified")
+    else:
+        # 保留原有的侧边栏代码
+        # 左侧栏参数输入
+        with st.sidebar:
+            status_box = st.container()
+            st.header("规划参数")
         
         # ====================================================================
         st.subheader("场景与环境")
@@ -1455,6 +1589,41 @@ def render() -> None:
     else:
         st.info("当前使用演示网格")
 
+    # Phase UI-1: 添加运行摘要面板
+    # 将所有配置写入 cost_meta
+    if use_unified_sidebar:
+        cost_meta.update({
+            'env_source': sidebar_config.get('env_source', 'demo'),
+            'cmems_layers': sidebar_config.get('cmems_layers', {}),
+            'polaris_enabled': sidebar_config.get('polaris_enabled', False),
+            'use_decayed_table': sidebar_config.get('use_decayed_table', False),
+            'hard_block_level': sidebar_config.get('hard_block_level', 3),
+            'elevated_penalty_scale': sidebar_config.get('elevated_penalty_scale', 2.0),
+            'shallow_enabled': sidebar_config.get('shallow_enabled', False),
+            'min_depth_m': sidebar_config.get('min_depth_m', 10.0),
+            'w_shallow': sidebar_config.get('w_shallow', 2.0),
+            'planner_backend': sidebar_config.get('planner_backend', 'auto'),
+            'w_ais_corridor': w_ais_corridor,
+            'w_ais_congestion': w_ais_congestion,
+            'w_ais': w_ais,
+            'wave_penalty': wave_penalty,
+            'w_edl': w_edl,
+            'edl_uncertainty_weight': edl_uncertainty_weight,
+            'grid_signature': sidebar_config.get('grid_signature'),
+        })
+    
+    # 渲染运行摘要面板
+    # 获取第一个可达路线的成本分解用于展示
+    first_breakdown = None
+    for mode_key in ["edl_safe", "efficient", "edl_robust"]:
+        route = routes_info.get(mode_key)
+        if route and route.reachable:
+            cost_field = cost_fields.get(mode_key)
+            if cost_field:
+                first_breakdown = compute_route_cost_breakdown(grid, cost_field, route.coords)
+                break
+    
+    render_run_summary_panel(cost_meta, first_breakdown)
 
     # 检查是否有可达的路线
     reachable_routes = {k: v for k, v in routes_info.items() if v.reachable}
