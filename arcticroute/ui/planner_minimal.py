@@ -610,13 +610,11 @@ def plan_three_routes(
     # DEBUG: 打印路线信息，用于诊断路线不显示问题
     # ========================================================================
     print("\n[DEBUG ROUTES] ===== Route Planning Complete =====")
-    # 组装按定义顺序的列表返回，方便测试使用索引访问
-    routes_list = []
+    # 打印路线信息用于调试
     for i, profile in enumerate(ROUTE_PROFILES):
         key = profile["key"]
         r = routes_info.get(key)
         if r is not None:
-            routes_list.append(r)
             try:
                 coords = r.coords or []
                 print(
@@ -631,7 +629,7 @@ def plan_three_routes(
             print(f"[DEBUG ROUTE] #{i} key={key} missing in routes_info")
     print("[DEBUG ROUTES] ===== End Route Planning =====\n")
     
-    return routes_list, cost_fields, meta, scores_by_key, recommended_key
+    return routes_info, cost_fields, meta, scores_by_key, recommended_key
 
 
 def render() -> None:
