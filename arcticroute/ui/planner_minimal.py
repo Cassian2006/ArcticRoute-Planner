@@ -679,8 +679,9 @@ def render() -> None:
     ais_density_path: Path | None = None
 
     # Phase UI-1: 使用新的统一侧边栏配置
-    # 检查是否使用新版侧边栏
-    use_unified_sidebar = st.session_state.get("use_unified_sidebar", True)
+    # 检查是否使用新版侧边栏 (强制开启用于调试)
+    use_unified_sidebar = True
+    st.sidebar.warning("🐞 调试模式：强制启用新侧边栏")
     
     if use_unified_sidebar:
         # 使用新的四大区块侧边栏
@@ -786,6 +787,7 @@ def render() -> None:
             
             # 获取船舶对象
             vessel_profiles = get_default_profiles()
+            st.sidebar.info(f"- 调试：加载了 {len(vessel_profiles)} 个船舶配置")
             selected_vessel_key = profile_key
             selected_vessel = vessel_profiles.get(profile_key, list(vessel_profiles.values())[0])
             
@@ -1221,6 +1223,7 @@ def render() -> None:
         st.session_state["ice_class_label"] = ice_label
         
         selected_vessel_key = profile_key
+        st.sidebar.info(f"- 调试：当前船舶 key = {profile_key}")
         selected_vessel = vessel_profiles.get(profile_key, list(vessel_profiles.values())[0])
         
         # ====================================================================
