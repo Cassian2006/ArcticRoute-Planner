@@ -13,6 +13,7 @@ Phase 3：三方案 demo Planner，支持 efficient / edl_safe / edl_robust 三�
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict
 from pathlib import Path
@@ -31,14 +32,18 @@ from arcticroute.core.landmask import (
 from arcticroute.core.cost import (
     build_demo_cost,
     build_cost_from_real_env,
-    list_available_ais_density_files,
-    discover_ais_density_candidates,
     compute_grid_signature,
 )
 from arcticroute.core.env_real import load_real_env_for_grid
 from arcticroute.core.astar import plan_route_latlon
 from arcticroute.core.analysis import compute_route_cost_breakdown, compute_route_profile
-from arcticroute.core.eco.vessel_profiles import get_default_profiles, VesselProfile
+from arcticroute.core.eco.vessel_profiles import get_profile_catalog, get_default_profiles, VesselProfile
+from arcticroute.ui.data_discovery import (
+    build_search_dirs,
+    discover_ais_density,
+    discover_newenv_cmems,
+    discover_static_assets,
+)
 from arcticroute.core.eco.eco_model import estimate_route_eco
 
 # 导入共享配置
@@ -279,7 +284,6 @@ def _update_pipeline_node(
             with st.session_state.pipeline_flow_placeholder.container():
                 render_pipeline_flow(
                     nodes,
-                    title="🔄 规划流程管线",
                     expanded=st.session_state.get("pipeline_flow_expanded", True),
                 )
         except Exception:
@@ -298,6 +302,7 @@ def plan_three_routes(
     vessel: VesselProfile | None = None,
     cost_mode: str = "demo_icebelt",
     wave_penalty: float = 0.0,
+    ice_penalty: float = 4.0,
     use_edl: bool = False,
     w_edl: float = 0.0,
     weight_risk: float = 0.33,
@@ -351,7 +356,8 @@ def plan_three_routes(
         "use_edl": bool(use_edl),
         "w_edl": float(w_edl if use_edl else 0.0),
     }
-    w_ais_effective = w_ais if w_ais is not None else ais_weight
+    w_ais_effective = max(float(w_ais or 0.0), float(ais_weight or 0.0), float(w_ais_corridor or 0.0), float(w_ais_congestion or 0.0))
+    ais_density_path_for_cost = "auto" if (ais_density_path is None and w_ais_effective > 0) else ais_density_path
     
     # 根据 cost_mode 决定是否加载真实环境数据
     real_env = None
@@ -374,7 +380,7 @@ def plan_three_routes(
         
         # 根据 profile 计算实际的权重参数
         # 基础权重（来自 UI 的全局参数）
-        base_ice_penalty = 4.0  # 默认基础冰风险权重
+        base_ice_penalty = ice_penalty  # 默认基础冰风险权重
         base_wave_penalty = wave_penalty
         base_w_edl = w_edl if use_edl else 0.0
         
@@ -402,7 +408,7 @@ def plan_three_routes(
                         use_edl_uncertainty=use_edl_uncertainty,
                         edl_uncertainty_weight=edl_uncertainty_weight,
                         ais_density=ais_density,
-                        ais_density_path=ais_density_path,
+                        ais_density_path=ais_density_path_for_cost,
                         ais_weight=w_ais_effective,
                         ais_density_da=ais_density_da,
                         w_ais_corridor=w_ais_corridor,
@@ -418,7 +424,7 @@ def plan_three_routes(
                         ice_lat_threshold=75.0,
                         w_ais=w_ais_effective,
                         ais_density=ais_density,
-                        ais_density_path=ais_density_path,
+                        ais_density_path=ais_density_path_for_cost,
                         w_ais_corridor=w_ais_corridor,
                         w_ais_congestion=w_ais_congestion,
                     )
@@ -431,7 +437,7 @@ def plan_three_routes(
                     ice_lat_threshold=75.0,
                     w_ais=w_ais_effective,
                     ais_density=ais_density,
-                    ais_density_path=ais_density_path,
+                    ais_density_path=ais_density_path_for_cost,
                     w_ais_corridor=w_ais_corridor,
                     w_ais_congestion=w_ais_congestion,
                 )
@@ -446,7 +452,7 @@ def plan_three_routes(
                 ice_lat_threshold=75.0,
                 w_ais=w_ais_effective,
                 ais_density=ais_density,
-                ais_density_path=ais_density_path,
+                ais_density_path=ais_density_path_for_cost,
                 w_ais_corridor=w_ais_corridor,
                 w_ais_congestion=w_ais_congestion,
             )
@@ -539,7 +545,7 @@ def plan_three_routes(
     # ========================================================================
     from arcticroute.core.analysis import compute_route_cost_breakdown, compute_route_scores
     
-    # ?? breakdowns_by_key ? eco_by_key
+    #  breakdowns_by_key  eco_by_key
     breakdowns_by_key = {}
     eco_by_key = {}
     
@@ -626,7 +632,7 @@ def plan_three_routes(
                     f"last={coords[-1] if coords else None}"
                 )
             except Exception as e:
-                print(f"[DEBUG ROUTE] #{i} error while inspecting route {getattr(r, 'label', '?')}: {e}")
+                print(f"[DEBUG ROUTE] #{i} error while inspecting route {getattr(r, 'label', '')}: {e}")
         else:
             print(f"[DEBUG ROUTE] #{i} key={key} missing in routes_info")
     print("[DEBUG ROUTES] ===== End Route Planning =====\n")
@@ -645,7 +651,6 @@ def render() -> None:
     """
     if not st.session_state.get("_ar_page_config_set"):
         st.set_page_config(
-            page_title="ArcticRoute Planner",
             layout="wide",
             initial_sidebar_state="expanded",
         )
@@ -665,6 +670,39 @@ def render() -> None:
     with st.sidebar:
         status_box = st.container()
         st.header("规划参数")
+
+        st.subheader("Data paths")
+        data_root = st.text_input(
+            "Data root (optional)",
+            value=st.session_state.get("data_root_override", ""),
+        )
+        manifest_path = st.text_input(
+            "Static assets manifest (optional)",
+            value=st.session_state.get("static_assets_manifest", ""),
+        )
+        st.session_state["data_root_override"] = data_root.strip()
+        st.session_state["static_assets_manifest"] = manifest_path.strip()
+
+        search_dirs = build_search_dirs(
+            data_root=data_root or None,
+            manifest_path=manifest_path or None,
+        )
+        with st.expander(f"Search dirs ({len(search_dirs)})", expanded=False):
+            if search_dirs:
+                st.code("\n".join(str(p) for p in search_dirs))
+            else:
+                st.info("No search dirs found. Set ARCTICROUTE_DATA_ROOT or Data root.")
+        if st.button("Rescan data", key="rescan_data_paths"):
+            st.session_state["scan_token"] = time.time()
+            try:
+                st.cache_data.clear()
+            except Exception:
+                pass
+            try:
+                st.cache_resource.clear()
+            except Exception:
+                pass
+            st.info("Scan triggered.")
         
         # ====================================================================
         st.subheader("场景与环境")
@@ -713,7 +751,7 @@ def render() -> None:
         else:
             st.caption("手动输入起终点和权重参数")
 
-        # ??????????
+        # 
         start_lat_default = st.session_state.get("start_lat", 66.0)
         start_lon_default = st.session_state.get("start_lon", 5.0)
         end_lat_default = st.session_state.get("end_lat", 78.0)
@@ -853,6 +891,129 @@ def render() -> None:
         st.session_state["w_ais"] = w_ais
         ais_weights_enabled = any(weight > 0 for weight in [w_ais, w_ais_corridor, w_ais_congestion])
 
+
+        st.subheader("Weights and Components")
+        with st.expander("Weights and Components", expanded=False):
+            def _slider_with_value(label, min_value, max_value, value, step, key, help_text=None):
+                c1, c2 = st.columns([4, 1])
+                with c1:
+                    val = st.slider(
+                        label,
+                        min_value=min_value,
+                        max_value=max_value,
+                        value=value,
+                        step=step,
+                        key=key,
+                        help=help_text,
+                    )
+                with c2:
+                    st.write(f"{val:.2f}")
+                return val
+
+            w_ice = _slider_with_value(
+                "SIC weight (w_ice)",
+                0.0,
+                10.0,
+                float(st.session_state.get("w_ice", 4.0)),
+                0.5,
+                "w_ice_slider",
+                "Sea-ice concentration penalty weight.",
+            )
+            w_sit = _slider_with_value(
+                "SIT weight (w_sit)",
+                0.0,
+                10.0,
+                float(st.session_state.get("w_sit", 0.0)),
+                0.5,
+                "w_sit_slider",
+                "Sea-ice thickness penalty weight.",
+            )
+            wave_penalty = _slider_with_value(
+                "SWH weight (w_wave)",
+                0.0,
+                10.0,
+                float(st.session_state.get("wave_penalty", wave_penalty)),
+                0.5,
+                "w_wave_slider",
+                "Significant wave height penalty weight.",
+            )
+            w_drift = _slider_with_value(
+                "Drift weight (w_drift)",
+                0.0,
+                10.0,
+                float(st.session_state.get("w_drift", 0.0)),
+                0.5,
+                "w_drift_slider",
+                "Ice drift penalty weight.",
+            )
+            w_shallow = _slider_with_value(
+                "Shallow penalty (w_shallow)",
+                0.0,
+                10.0,
+                float(st.session_state.get("w_shallow", 0.0)),
+                0.5,
+                "w_shallow_slider",
+                "Shallow-water penalty weight.",
+            )
+            w_ais_corridor = _slider_with_value(
+                "AIS corridor weight (w_corridor)",
+                0.0,
+                10.0,
+                float(st.session_state.get("w_ais_corridor", w_ais_corridor)),
+                0.5,
+                "w_ais_corridor_slider",
+                "Prefer main AIS lanes.",
+            )
+            w_ais_congestion = _slider_with_value(
+                "AIS congestion penalty (w_congestion)",
+                0.0,
+                10.0,
+                float(st.session_state.get("w_ais_congestion", w_ais_congestion)),
+                0.5,
+                "w_ais_congestion_slider",
+                "Penalize congested AIS areas.",
+            )
+            w_ais = _slider_with_value(
+                "Legacy AIS weight (w_ais)",
+                0.0,
+                10.0,
+                float(st.session_state.get("w_ais", w_ais)),
+                0.5,
+                "w_ais_slider",
+                "Legacy AIS weight (deprecated).",
+            )
+            w_edl_risk = _slider_with_value(
+                "EDL risk weight (w_edl_risk)",
+                0.0,
+                10.0,
+                float(st.session_state.get("w_edl_risk", w_edl)),
+                0.5,
+                "w_edl_risk_slider",
+                "EDL risk cost weight.",
+            )
+            w_edl_uncertainty = _slider_with_value(
+                "EDL uncertainty weight (w_edl_uncertainty)",
+                0.0,
+                10.0,
+                float(st.session_state.get("w_edl_uncertainty", edl_uncertainty_weight)),
+                0.5,
+                "w_edl_uncertainty_slider",
+                "EDL uncertainty penalty weight.",
+            )
+
+            st.session_state["w_ice"] = w_ice
+            st.session_state["w_sit"] = w_sit
+            st.session_state["wave_penalty"] = wave_penalty
+            st.session_state["w_drift"] = w_drift
+            st.session_state["w_shallow"] = w_shallow
+            st.session_state["w_ais_corridor"] = w_ais_corridor
+            st.session_state["w_ais_congestion"] = w_ais_congestion
+            st.session_state["w_ais"] = w_ais
+            st.session_state["w_edl_risk"] = w_edl_risk
+            st.session_state["w_edl_uncertainty"] = w_edl_uncertainty
+
+        ais_weights_enabled = any(weight > 0 for weight in [w_ais, w_ais_corridor, w_ais_congestion])
+
         # ====================================================================
         # 任务 C1：网格变化检测 - 自动清空旧 AIS 选择
         # ====================================================================
@@ -867,7 +1028,7 @@ def render() -> None:
             st.session_state["ais_density_path"] = None
             st.session_state["ais_density_path_selected"] = None
             st.session_state["ais_density_cache_key"] = None
-            st.info(f"🔄 网格已切换（{previous_grid_signature[:25]}... → {current_grid_signature[:25]}...），已清空 AIS 密度选择以避免维度错配")
+            st.info(f" 网格已切换（{previous_grid_signature[:25]}... → {current_grid_signature[:25]}...），已清空 AIS 密度选择以避免维度错配")
             print(f"[UI] Grid changed, cleared AIS selection: {previous_grid_signature[:30]}... -> {current_grid_signature[:30]}...")
         
         # 更新当前网格 signature
@@ -879,115 +1040,83 @@ def render() -> None:
         # ====================================================================
         # 自动发现 AIS 密度候选文件（按 grid_signature 优先级排序）
         grid_sig = st.session_state.get("grid_signature", None)
-        ais_candidates = discover_ais_density_candidates(grid_signature=grid_sig)
-        
-        ais_options = ["自动选择 (推荐)"]
-        ais_path_map = {"自动选择 (推荐)": None}
-        ais_match_type_map = {"自动选择 (推荐)": "auto"}
-        
-        for cand in ais_candidates:
-            label = cand["label"]
-            match_type = cand.get("match_type", "generic")
-            
-            # 在标签中显示匹配类型
-            if match_type == "exact":
-                label_with_type = f"{label} ✓ (精确匹配)"
-            elif match_type == "demo":
-                label_with_type = f"{label} (演示)"
-            else:
-                label_with_type = f"{label}"
-            
-            ais_options.append(label_with_type)
-            ais_path_map[label_with_type] = cand["path"]
-            ais_match_type_map[label_with_type] = match_type
+        ais_df, ais_meta = discover_ais_density(search_dirs, grid_sig)
+
+        ais_options = ["Auto select (recommended)"]
+        ais_path_map = {"Auto select (recommended)": None}
+        ais_record_map: dict[str, dict] = {"Auto select (recommended)": {}}
+
+        if not ais_df.empty:
+            for _, row in ais_df.iterrows():
+                try:
+                    path_val = str(row.get("path", ""))
+                    name = Path(path_val).name if path_val else "unknown"
+                except Exception:
+                    name = str(row.get("path", "unknown"))
+                    path_val = str(row.get("path", ""))
+                match_reason = str(row.get("match", "")).strip()
+                label = f"{name} ({match_reason})" if match_reason else name
+                ais_options.append(label)
+                ais_path_map[label] = path_val
+                ais_record_map[label] = dict(row)
 
         ais_choice = st.selectbox(
-            "AIS 密度数据源 (.nc)",
+            "AIS density source (.nc)",
             options=ais_options,
-            help="自动：在 data_real/ais/density 与 data_real/ais/derived 中自动选取；也可手动固定某个 .nc 文件。",
+            help="Auto: pick by search dirs and grid signature; or choose a file.",
         )
 
-        ais_density_path = ais_path_map.get(ais_choice)  # 可能是 None
-        ais_match_type = ais_match_type_map.get(ais_choice, "unknown")
+        ais_density_path = ais_path_map.get(ais_choice)
+        ais_record = ais_record_map.get(ais_choice, {})
+        ais_match_reason = str(ais_record.get("match", "")).strip()
+        ais_file_sig = str(ais_record.get("grid_signature", "")).strip()
 
-        
+        with st.expander("AIS density scan results", expanded=False):
+            if ais_meta.get("count", 0) > 0:
+                st.caption(f"Current grid signature: {ais_meta.get('grid_signature', '')}")
+                st.caption(f"Found {ais_meta.get('count')} files | Latest: {ais_meta.get('latest_path', '')}")
+                st.dataframe(ais_df, use_container_width=True)
+            else:
+                st.warning("No AIS density files found.")
+                st.info("Place files under data_real/ais/density or data_real/ais/derived, or set ARCTICROUTE_DATA_ROOT.")
 
-
-        # ====================================================================
-        # ====================================================================  
-        # 任务 C：AIS 密度数据检查提示 + 重新扫描按钮
-        # ====================================================================  
         ais_data_available = False
         if not ais_weights_enabled:
-            st.info("AIS 未启用（corridor/congestion/legacy 权重均为 0）。")
+            st.info("AIS weights are 0; AIS disabled.")
         else:
-            # 检查 AIS 密度数据是否可用（根据 NC 文件）
-            ais_data_available = False
             ais_status_text = ""
-            ais_status_color = "gray"
-            ais_file_info = ""
-
             try:
                 from arcticroute.core import cost as cost_core
-                from pathlib import Path
 
-                # 根据网格模式选择优先级
                 prefer_real = (grid_mode == "real")
                 detected_ais_density = cost_core.has_ais_density_data(grid=None, prefer_real=prefer_real)
 
                 if ais_density_path is not None:
                     ais_data_available = True
-                    # 确保 ais_density_path 是 Path 对象
                     ais_path_obj = Path(ais_density_path) if isinstance(ais_density_path, str) else ais_density_path
-                    
-                    # 构建详细的状态信息
-                    match_label = ""
-                    if ais_match_type == "exact":
-                        match_label = "[精确匹配]"
-                    elif ais_match_type == "demo":
-                        match_label = "[演示文件]"
-                    else:
-                        match_label = "[通用]"
-                    
-                    ais_file_info = f"{ais_path_obj.name} {match_label}"
-                    ais_status_text = f"✅ AIS density: {ais_file_info}"
-                    ais_status_color = "green"
+                    match_label = f"({ais_match_reason})" if ais_match_reason else ""
+                    ais_status_text = f"AIS file: {ais_path_obj.name} {match_label}".strip()
+                    if "mismatch" in ais_match_reason:
+                        st.warning(
+                            f"AIS grid mismatch: current={grid_sig or 'unknown'} file={ais_file_sig or 'unknown'}"
+                        )
                 elif detected_ais_density:
                     ais_data_available = True
-                    ais_status_text = "✅ 已检测到 AIS 拥挤度密度数据（自动选择模式）"
-                    ais_status_color = "green"
+                    ais_status_text = "AIS density available (auto select)."
                 else:
-                    ais_status_text = "⚠ 未找到匹配当前网格的 AIS density，需启用权重时再检查或运行生成脚本"
-                    ais_status_color = "orange"
+                    ais_status_text = (
+                        "AIS density not found. Put files under data_real/ais/density "
+                        "or set ARCTICROUTE_DATA_ROOT."
+                    )
             except Exception as e:
-                ais_status_text = f"⚠ AIS 数据检查失败: {str(e)[:60]}"
-                ais_status_color = "orange"
+                ais_status_text = f"AIS check failed: {e}"
 
-            # 显示 AIS 状态（左侧栏）
-            st.markdown("**AIS 密度状态**")
-            if ais_status_color == "green":
-                st.success(ais_status_text)
-            elif ais_status_color == "orange":
-                st.warning(ais_status_text)
-            else:
+            st.markdown("**AIS density status**")
+            if ais_data_available:
                 st.info(ais_status_text)
-            
-            # 添加重新扫描按钮
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🔄 重新扫描 AIS", key="rescan_ais_btn"):
-                    # 清空 AIS 相关的缓存
-                    st.session_state["ais_density_path_selected"] = None
-                    st.session_state["ais_density_cache_key"] = None
-                    st.rerun()
-            
-            with col2:
-                if st.button("ℹ️ 网格信息", key="grid_info_btn"):
-                    st.info(f"当前网格签名: {st.session_state.get('grid_signature', 'N/A')}")
-
-        
-        # ====================================================================
-        # Phase 4: 规划风格下拉框（统一 EDL 模式）
+            else:
+                st.warning(ais_status_text)
+# Phase 4: 规划风格下拉框（统一 EDL 模式）
         # ====================================================================
         st.subheader("规划风格")
         edl_modes = list_edl_modes()
@@ -1065,7 +1194,7 @@ def render() -> None:
         )
         
         st.subheader("船舶配置")
-        vessel_profiles = get_default_profiles()
+        vessel_profiles = get_profile_catalog()
         vessel_keys = list(vessel_profiles.keys())
         vessel_default = st.session_state.get("vessel_profile", vessel_keys[0] if vessel_keys else None)
         if vessel_default not in vessel_keys:
@@ -1098,12 +1227,12 @@ def render() -> None:
             st.session_state["ais_density_path"] = None
             st.session_state["ais_density_path_selected"] = None
             st.session_state["ais_density_cache_key"] = None
-            st.info(f"🔄 网格已切换（{previous_grid_sig[:20]}... → {current_grid_sig[:20]}...），已清空 AIS 密度选择以避免维度错配")
+            st.info(f" 网格已切换（{previous_grid_sig[:20]}... → {current_grid_sig[:20]}...），已清空 AIS 密度选择以避免维度错配")
         
         if current_grid_sig is not None:
             st.session_state["previous_grid_signature"] = current_grid_sig
         grid_sig = current_grid_sig
-        ais_status_check = "✓" if ais_data_available else "✗"
+        ais_status_check = "OK" if ais_data_available else "NA"
         
         # 处理 grid_sig 可能为 None 的情况
         if grid_sig is None:
@@ -1124,26 +1253,13 @@ def render() -> None:
 
     # 初始化流动管线相关的 session state
     if "pipeline_flow_nodes" not in st.session_state:
-        st.session_state.pipeline_flow_nodes = []
-    if "pipeline_flow_expanded" not in st.session_state:
-        st.session_state.pipeline_flow_expanded = True
-    if "pipeline_flow_start_time" not in st.session_state:
-        st.session_state.pipeline_flow_start_time = None
-    
-    # 规划按钮被点击时，初始化流动管线
-    if do_plan:
-        st.session_state.pipeline_flow_expanded = True
-        st.session_state.pipeline_flow_start_time = datetime.now()
-        # 初始化 8 个节点
         st.session_state.pipeline_flow_nodes = [
-            PipeNode(key="parse", label="① 解析场景/参数", status="pending"),
-            PipeNode(key="grid_landmask", label="② 加载网格与 landmask", status="pending"),
-            PipeNode(key="env_layers", label="③ 加载环境层", status="pending"),
-            PipeNode(key="ais_density", label="④ 加载 AIS 密度", status="pending"),
-            PipeNode(key="cost_field", label="⑤ 构建成本场", status="pending"),
-            PipeNode(key="astar", label="⑥ A* 规划", status="pending"),
-            PipeNode(key="analysis", label="⑦ 分析与诊断", status="pending"),
-            PipeNode(key="render", label="⑧ 渲染与导出", status="pending"),
+            PipeNode(key="data_discovery", label="Data discovery", status="pending"),
+            PipeNode(key="env_load", label="Environment load", status="pending"),
+            PipeNode(key="cost_build", label="Cost build", status="pending"),
+            PipeNode(key="rules_polaris", label="Rules/Polaris", status="pending"),
+            PipeNode(key="planning", label="Planning (A*/PolarRoute)", status="pending"),
+            PipeNode(key="explain_export", label="Explain/Export", status="pending"),
         ]
     
     # 初始化旧 Pipeline（保留向后兼容）
@@ -1151,13 +1267,12 @@ def render() -> None:
     
     # 定义 Pipeline stages
     pipeline_stages = [
-        ("grid_env", "加载网格"),
-        ("ais", "加载 AIS"),
-        ("cost_build", "构建成本场"),
-        ("snap", "起止点吸附"),
-        ("astar", "A* 路由"),
-        ("analysis", "成本分析"),
-        ("render", "数据准备"),
+        ("data_discovery", "Data discovery"),
+        ("env_load", "Environment load"),
+        ("cost_build", "Cost build"),
+        ("rules_polaris", "Rules/Polaris"),
+        ("planning", "Planning (A*/PolarRoute)"),
+        ("explain_export", "Explain/Export"),
     ]
     
     # 添加所有 stages 到 pipeline
@@ -1185,7 +1300,6 @@ def render() -> None:
         with pipeline_flow_placeholder.container():
             render_pipeline_flow(
                 st.session_state.pipeline_flow_nodes,
-                title="🔄 规划流程管线",
                 expanded=st.session_state.get("pipeline_flow_expanded", True),
             )
     
@@ -1200,43 +1314,38 @@ def render() -> None:
     ais_density_da = None
     with st.spinner("加载网格与规划路线..."):
         # 更新第 1 个节点：解析场景/参数
-        _update_pipeline_node(0, "running", "正在解析...")
+        _update_pipeline_node(0, "running", "Scanning data...")
         
         # 更新第 2 个节点：加载网格与 landmask
-        _update_pipeline_node(1, "running", "正在加载...")
+        _update_pipeline_node(1, "running", "Loading environment...")
         
         if grid_mode == "real":
-            # 尝试加载真实网格
             real_grid = load_real_grid_from_nc()
             if real_grid is not None:
                 grid = real_grid
-                # 尝试加载真实 landmask
                 land_mask = load_real_landmask_from_nc(grid)
                 if land_mask is not None:
                     grid_source_label = "real"
                 else:
-                    # 使用 demo landmask
-                    st.warning("真实 landmask 不可用，使用演示 landmask。")
+                    st.warning("Real landmask unavailable; using demo landmask.")
                     _, land_mask = make_demo_grid(ny=grid.shape()[0], nx=grid.shape()[1])
                     grid_source_label = "real_grid_demo_landmask"
             else:
-                # 回退到 demo
-                st.warning("真实网格不可用，使用演示网格。")
+                st.warning("Real grid unavailable; using demo grid.")
                 grid, land_mask = make_demo_grid()
                 grid_source_label = "demo"
         else:
-            # 使用 demo 网格
             grid, land_mask = make_demo_grid()
             grid_source_label = "demo"
-        
-        # 完成第 1、2 个节点
-        grid_shape = grid.shape() if hasattr(grid, 'shape') else (0, 0)
-        _update_pipeline_node(0, "done", f"grid={grid_shape[0]}×{grid_shape[1]}", seconds=0.5)
-        _update_pipeline_node(1, "done", f"landmask={grid_source_label}", seconds=0.3)
+
+        grid_shape = grid.shape() if hasattr(grid, "shape") else (0, 0)
+        _update_pipeline_node(0, "done", "inputs ready", seconds=0.2)
+        _update_pipeline_node(1, "done", f"grid={grid_shape[0]}x{grid_shape[1]} landmask={grid_source_label}", seconds=0.3)
         
         # 尝试加载 AIS 密度（从 NC 文件）
         # 完成 grid_env stage
-        pipeline.done('grid_env', extra_info=f'grid={grid_shape[0]}×{grid_shape[1]}')
+        pipeline.done('data_discovery')
+        pipeline.done('env_load', extra_info=f'grid={grid_shape[0]}×{grid_shape[1]}')
         # [removed] render_pipeline timeline (simplified) disabled to avoid duplicate UI
         
         # ====================================================================
@@ -1264,7 +1373,7 @@ def render() -> None:
                 # 情况 1：用户未选择 AIS 文件（自动模式，交由成本构建阶段匹配/重采样）
                 if ais_density_path_obj is None:
                     _update_pipeline_node(3, "done", "自动选择：运行时加载", seconds=0.1)
-                    st.info("ℹ️ AIS 采用自动选择/重采样，将在成本阶段按网格自动匹配。")
+                    st.info(" AIS 采用自动选择/重采样，将在成本阶段按网格自动匹配。")
                 
                 # 情况 2：文件存在，尝试加载
                 elif ais_density_path_obj.exists():
@@ -1285,7 +1394,7 @@ def render() -> None:
                             })
                             # 成功加载，标记为 done
                             _update_pipeline_node(3, "done", f"AIS={ais_density.shape[0]}×{ais_density.shape[1]} source={ais_density_path_obj.name}", seconds=0.3)
-                            st.success(f"✅ 已加载 AIS 拥挤度密度数据，栅格={ais_info['shape']}")
+                            st.success(f"OK 已加载 AIS 拥挤度密度数据，栅格={ais_info['shape']}")
                         else:
                             # 文件无效
                             _update_pipeline_node(3, "done", "跳过：文件格式无效", seconds=0.1)
@@ -1298,7 +1407,7 @@ def render() -> None:
                     except Exception as e:
                         # 加载失败
                         _update_pipeline_node(3, "fail", f"加载失败：{str(e)[:50]}", seconds=0.2)
-                        st.error(f"❌ 加载 AIS 密度失败：{e}")
+                        st.warning(f"❌ 加载 AIS 密度失败：{e}")
                         w_ais = 0.0
                         w_ais_corridor = 0.0
                         w_ais_congestion = 0.0
@@ -1316,7 +1425,7 @@ def render() -> None:
             except Exception as e:
                 # 意外错误
                 _update_pipeline_node(3, "fail", f"异常：{str(e)[:50]}", seconds=0.2)
-                st.error(f"❌ AIS 加载异常：{e}")
+                st.warning(f"❌ AIS 加载异常：{e}")
                 w_ais = 0.0
                 w_ais_corridor = 0.0
                 w_ais_congestion = 0.0
@@ -1332,7 +1441,6 @@ def render() -> None:
                 with st.session_state.pipeline_flow_placeholder.container():
                     render_pipeline_flow(
                         st.session_state.pipeline_flow_nodes,
-                        title="🔧 规划流程管线",
                         expanded=st.session_state.get("pipeline_flow_expanded", True),
                     )
             except Exception:
@@ -1374,21 +1482,21 @@ def render() -> None:
             # pydeck
             try:
                 import pydeck  # type: ignore
-                st.caption("可视化: pydeck 可用 ✅")
+                st.caption("可视化: pydeck 可用 OK")
             except Exception:
                 st.warning("可视化: pydeck 未安装，将无法在地图上绘制路径。请运行 `pip install pydeck`。")
             
             # scipy（用于更高质量的 landmask 重采样）
             try:
                 import scipy  # type: ignore
-                st.caption("重采样: SciPy 可用 ✅（landmask 将使用 KDTree 最近邻，质量更好）")
+                st.caption("重采样: SciPy 可用 OK（landmask 将使用 KDTree 最近邻，质量更好）")
             except Exception:
                 st.info("重采样: SciPy 未安装，将使用简易最近邻重采样（已自动降级）。建议 `pip install scipy` 提升质量与速度。")
             
             # torch（用于 EDL 模型）
             try:
                 import torch  # type: ignore
-                st.caption("EDL: PyTorch 可用 ✅")
+                st.caption("EDL: PyTorch 可用 OK")
             except Exception:
                 st.info("EDL: PyTorch 未安装，EDL 风险将使用占位/常数风险（日志中含有 EDL fallback 提示）。")
             
@@ -1399,40 +1507,78 @@ def render() -> None:
             )
         
         # 完成第 3 个节点：加载环境层
-        _update_pipeline_node(2, "done", "SIC/Wave 已加载", seconds=0.2)
+        _update_pipeline_node(1, "done", "SIC/Wave loaded", seconds=0.2)
         
         # 规划路线（使用从 EDL 模式获取的参数）
         # 启动后续 stages
         
         # 更新第 5 个节点：构建成本场
-        _update_pipeline_node(4, "running", "构建成本场...")
-        
+        _update_pipeline_node(2, "running", "Building cost field...")
+
+        w_ais_effective = max(float(w_ais or 0.0), float(w_ais_corridor or 0.0), float(w_ais_congestion or 0.0))
+        ais_density_path_for_cost = "auto" if (ais_density_path is None and w_ais_effective > 0) else ais_density_path
+
         routes_info, cost_fields, cost_meta, scores_by_key, recommended_key = plan_three_routes(
-            grid, land_mask, start_lat, start_lon, end_lat, end_lon, allow_diag, selected_vessel, cost_mode, wave_penalty, use_edl, w_edl,
+            grid, land_mask, start_lat, start_lon, end_lat, end_lon, allow_diag, selected_vessel, cost_mode, wave_penalty, w_ice, use_edl, w_edl,
             weight_risk=weight_risk, weight_uncertainty=weight_uncertainty, weight_fuel=weight_fuel,
             edl_uncertainty_weight=edl_uncertainty_weight,
             ais_density=ais_density,
-            ais_density_path=ais_density_path,
+            ais_density_path=ais_density_path_for_cost,
             ais_density_da=ais_density_da,
             w_ais_corridor=w_ais_corridor,
             w_ais_congestion=w_ais_congestion,
             w_ais=w_ais,
         )
+
+        try:
+            out_dir = Path(__file__).resolve().parents[2] / "reports" / "last_plan"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            first_key = next(iter(cost_fields.keys()), None)
+            first_route = routes_info.get(first_key) if first_key else None
+            if first_key and first_route and first_route.reachable:
+                breakdown = compute_route_cost_breakdown(grid, cost_fields[first_key], first_route.coords)
+                weights_cfg = {
+                    "w_ice": float(st.session_state.get("w_ice", w_ice)),
+                    "w_sit": float(st.session_state.get("w_sit", 0.0)),
+                    "w_wave": float(wave_penalty),
+                    "w_drift": float(st.session_state.get("w_drift", 0.0)),
+                    "w_shallow": float(st.session_state.get("w_shallow", 0.0)),
+                    "w_ais": float(w_ais or 0.0),
+                    "w_ais_corridor": float(w_ais_corridor or 0.0),
+                    "w_ais_congestion": float(w_ais_congestion or 0.0),
+                    "w_edl_risk": float(st.session_state.get("w_edl_risk", w_edl)),
+                    "w_edl_uncertainty": float(st.session_state.get("w_edl_uncertainty", edl_uncertainty_weight)),
+                }
+                breakdown_dict = {
+                    "total_cost": breakdown.total_cost,
+                    "component_totals": breakdown.component_totals,
+                    "component_stats": {},
+                    "meta": {"config": weights_cfg},
+                }
+                (out_dir / "cost_breakdown.json").write_text(
+                    json.dumps(breakdown_dict, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+        except Exception as e:
+            st.warning(f"Failed to write cost_breakdown.json: {e}")
+
+
+
         
         # 完成第 5、6 个节点
-        _update_pipeline_node(4, "done", "3 种成本场", seconds=0.6)
+        _update_pipeline_node(2, "done", "Cost fields ready", seconds=0.6)
         
         # 更新第 6 个节点：A* 规划
-        _update_pipeline_node(5, "running", "规划路线...")
+        _update_pipeline_node(4, "running", "Planning routes...")
         
         # 完成 cost_build/snap/astar stages
         pipeline.done('cost_build')
-        pipeline.done('snap')
+        pipeline.done('rules_polaris')
         num_reachable = sum(1 for r in routes_info.values() if r.reachable)
-        pipeline.done('astar', extra_info=f'routes reachable={num_reachable}/3')
+        pipeline.done('planning', extra_info=f'routes reachable={num_reachable}/3')
         
         # 完成第 6 个节点
-        _update_pipeline_node(5, "done", f"可达={num_reachable}/3", seconds=0.8)
+        _update_pipeline_node(4, "done", f"reachable={num_reachable}/3", seconds=0.8)
         # [removed] render_pipeline timeline (simplified) disabled to avoid duplicate UI
         
         # 如果真实环境数据不可用，显示警告并给出可能原因
@@ -1449,7 +1595,7 @@ def render() -> None:
     # 网格加载状态提示
     if grid_source_label == "real":
         ny, nx = grid.shape()
-        st.success(f"✅ 使用真实环境网格（{ny}×{nx}）")
+        st.success(f"OK 使用真实环境网格（{ny}×{nx}）")
     elif grid_mode == "real":
         st.warning("⚠️ 真实环境不可用，已回退到 demo 网格")
     else:
@@ -1460,7 +1606,7 @@ def render() -> None:
     reachable_routes = {k: v for k, v in routes_info.items() if v.reachable}
     
     if not reachable_routes:
-        st.error("三条方案均不可达，请调整起止点后重试。")
+        st.warning("三条方案均不可达，请调整起止点后重试。")
         return
 
     modes = ["efficient", "edl_safe", "edl_robust"]
@@ -1581,7 +1727,7 @@ def render() -> None:
                 high_uncertainty_frac = float(np.sum(vals > 0.5)) / float(len(vals))
 
     # 启动 analysis stage
-    pipeline.start('analysis')
+    pipeline.start('explain_export')
     
     st.subheader("KPI 总览")
     c1, c2, c3 = st.columns(3)
@@ -1634,14 +1780,13 @@ def render() -> None:
     # 顶部地图
     # 完成 analysis 并启动 render
     # 更新第 7 个节点：分析与诊断
-    _update_pipeline_node(6, "running", "分析成本...")
-    pipeline.done('analysis')
+    _update_pipeline_node(5, "running", "Explain/export...")
+    pipeline.done('explain_export')
     # [removed] render_pipeline timeline (simplified) disabled to avoid duplicate UI
-    _update_pipeline_node(6, "done", "分析完成", seconds=0.3)
+    _update_pipeline_node(5, "done", "Explain/export done", seconds=0.3)
     
     # 更新第 8 个节点：渲染与导出
-    _update_pipeline_node(7, "running", "渲染地图...")
-    pipeline.start('render')
+    
     
     st.subheader("路线对比地图")
     path_data = []
@@ -1758,8 +1903,8 @@ def render() -> None:
         emoji_map = {
             "ice_risk": "🧊",
             "wave_risk": "🌊",
-            "ais_density": "🚢",
-            "edl_risk": "🧠",
+            "ais_density": "",
+            "edl_risk": "",
             "edl_uncertainty_penalty": "❓",
         }
         return f"主风险：{emoji_map.get(main_key, '')} {main_key} {frac:.0%}"
@@ -1769,7 +1914,7 @@ def render() -> None:
         label = ROUTE_LABELS.get(mode, mode)
         with card_cols[idx]:
             if route is None or not route.reachable:
-                st.error(f"{label}：不可达")
+                st.warning(f"{label}：不可达")
                 st.caption("距离 / 成本：-")
                 continue
             tag_bits = [
@@ -1943,8 +2088,6 @@ def render() -> None:
                     .mark_line(point=True)
                     .encode(
                         theta=alt.Theta("angle:Q", stack=None),
-                        radius=alt.Radius("value:Q", scale=alt.Scale(domain=[0, 1]), title="归一化值"),
-                        color=alt.Color("mode:N", title="方案"),
                         tooltip=["mode:N", "metric:N", alt.Tooltip("value:Q", format=".2f")],
                     )
                 )
@@ -1955,7 +2098,7 @@ def render() -> None:
             st.info(f"雷达图绘制失败：{e}")
 
     tab_cost, tab_profile, tab_edl, tab_ais = st.tabs(
-        ["📊 成本分解（balanced/edl_safe）", "📈 沿程剖面", "🧠 EDL 不确定性", "🚢 AIS 拥挤度 & 拥堵"]
+        [" 成本分解（balanced/edl_safe）", " 沿程剖面", " EDL 不确定性", " AIS 拥挤度 & 拥堵"]
     )
 
     with tab_cost:
@@ -2115,9 +2258,6 @@ def render() -> None:
                                         alt.Chart(df_long.dropna())
                                         .mark_line()
                                         .encode(
-                                            x=alt.X("distance_km:Q", title="路径累计距离 (km)"),
-                                            y=alt.Y("值:Q", scale=alt.Scale(domain=[0, 1]), title="标准化值 (0-1)"),
-                                            color=alt.Color("变量:N", title="维度"),
                                             tooltip=[alt.Tooltip("distance_km:Q", format=".0f"), "变量:N", alt.Tooltip("值:Q", format=".2f")],
                                         )
                                     )
@@ -2180,7 +2320,7 @@ def render() -> None:
         else:
             st.info("当前成本构建未启用 AIS 成本（权重为 0 或缺少 AIS 数据）。")
 
-    st.subheader("📥 导出当前规划结果")
+    st.subheader(" 导出当前规划结果")
     export_data = []
     for mode, route in routes_info.items():
         if route.reachable:
@@ -2207,7 +2347,7 @@ def render() -> None:
         df_export = pd.DataFrame(export_data)
         csv_bytes = df_export.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="📥 下载当前规划结果 (CSV)",
+            label=" 下载当前规划结果 (CSV)",
             data=csv_bytes,
             file_name=f"{selected_scenario_name}_{selected_edl_mode}_results.csv",
             mime="text/csv",
@@ -2215,7 +2355,7 @@ def render() -> None:
         )
 
         # === UX-3：一键导出当前规划报告（Markdown） ===
-        st.subheader("🧾 导出本次规划报告 (Markdown)")
+        st.subheader(" 导出本次规划报告 (Markdown)")
 
         def _get_costs_for_row(mode_key: str, route_obj: RouteInfo):
             b = _get_breakdown_for_route(mode_key, route_obj)
@@ -2403,7 +2543,7 @@ def render() -> None:
         except Exception as e:
             st.warning(f"评估结果展示失败：{e}")
 
-    results_tab, = st.tabs(["📊 方案对比"])
+    results_tab, = st.tabs([" 方案对比"])
     with results_tab:
         st.caption("展示当前场景三条方案的距离 / 成本 / 风险对比，地图与 KPI 卡片位于上方，可使用上方单选转换高亮方案。")
 
@@ -2509,9 +2649,6 @@ def render() -> None:
                             alt.Chart(filtered)
                             .mark_circle(size=70, opacity=0.8)
                             .encode(
-                                x=alt.X("distance_km:Q", title="Distance (km)"),
-                                y=alt.Y("total_cost:Q", title="Total cost"),
-                                color=alt.Color("mode:N", title="Mode"),
                                 tooltip=["scenario_id", "mode", "grid_mode", "distance_km", "total_cost"],
                             )
                         )
@@ -2604,7 +2741,7 @@ def render() -> None:
             st.plotly_chart(fig, use_container_width=True)
             return True
         except Exception as e:
-            st.error(f"Plotly 备用渲染失败：{e}")
+            st.warning(f"Plotly 备用渲染失败：{e}")
             return False
 
     rendered = False
@@ -2701,7 +2838,7 @@ def render() -> None:
         
         summary_data.append({
             "方案": route_info.label,
-            "可达": "✓" if route_info.reachable else "✗",
+            "可达": "OK" if route_info.reachable else "NA",
             "路径点数": route_info.steps if route_info.steps is not None else "-",
             "粗略距离_km": (
                 f"{route_info.approx_length_km:.1f}"
@@ -2739,7 +2876,7 @@ def render() -> None:
             break
     
     if recommended_label:
-        st.success(f"✅ 当前偏好下推荐路线：**{recommended_label}**（综合评分最低）")
+        st.success(f"OK 当前偏好下推荐路线：**{recommended_label}**（综合评分最低）")
         
         # 根据推荐路线给出提示
         if recommended_key == "edl_robust":
@@ -2836,7 +2973,7 @@ def render() -> None:
     
     # 检查是否有路线踩陆
     if any((info.get("on_land_steps", 0) or 0) > 0 for info in summary_data):
-        st.error("警告：根据当前 landmask，有路线踩到了陆地，请检查成本场或掩码数据。")
+        st.warning("警告：根据当前 landmask，有路线踩到了陆地，请检查成本场或掩码数据。")
     else:
         st.success("根据当前 landmask，三条路线均未踩陆（demo 世界下行为正常）。")
     
@@ -2924,9 +3061,9 @@ def render() -> None:
         "wave_risk": "波浪风险",
         "ice_class_soft": "⚠️ 冰级软约束",
         "ice_class_hard": "🚫 冰级硬限制",
-        "edl_risk": "🧠 EDL 风险",
+        "edl_risk": " EDL 风险",
         "edl_uncertainty_penalty": "❓ EDL 不确定性",
-        "ais_density": "🚢 AIS 拥挤度 (deprecated)",
+        "ais_density": " AIS 拥挤度 (deprecated)",
         "ais_corridor": "🧭 AIS 主航线偏好（corridor）",
         "ais_congestion": "🚦 AIS 拥挤惩罚（congestion）",
     }
@@ -2987,13 +3124,13 @@ def render() -> None:
                         
                         # 根据来源添加标签
                         if edl_source == "miles-guess":
-                            comp_label = f"🧠 {comp_label} [miles-guess]"
+                            comp_label = f" {comp_label} [miles-guess]"
                         elif edl_source == "pytorch":
-                            comp_label = f"🧠 {comp_label} [PyTorch]"
+                            comp_label = f" {comp_label} [PyTorch]"
                         else:
-                            comp_label = f"🧠 {comp_label}"
+                            comp_label = f" {comp_label}"
                     elif comp_name == "ais_density":
-                        # AIS 标签已经包含 🚢 emoji，这里保持原样
+                        # AIS 标签已经包含  emoji，这里保持原样
                         pass
                     
                     breakdown_data.append({
@@ -3159,10 +3296,10 @@ def render() -> None:
     
     # 完成 render stage 并保存结果到 session_state
     # [removed] render_pipeline timeline (simplified) disabled to avoid duplicate UI
-    pipeline.done('render')
+    
     
     # 完成第 8 个节点：渲染与导出
-    _update_pipeline_node(7, "done", "渲染完成", seconds=0.5)
+    _update_pipeline_node(5, "done", "Explain/export done", seconds=0.5)
     
     # 计算总耗时
     if st.session_state.get("pipeline_flow_start_time") is not None:
@@ -3171,7 +3308,6 @@ def render() -> None:
         with st.session_state.pipeline_flow_placeholder.container():
             render_pipeline_flow(
                 st.session_state.pipeline_flow_nodes,
-                title="🔄 规划流程管线 ✅ 完成",
                 expanded=False,  # 完成后自动折叠
             )
     
@@ -3187,7 +3323,7 @@ def render() -> None:
     # 规划完成后自动折叠 pipeline
     st.session_state['pipeline_expanded'] = False
     st.rerun()
-    st.subheader("📥 导出当前规划结果")
+    st.subheader(" 导出当前规划结果")
     
     # 为每个可达的路线生成导出数据
     export_data = []
@@ -3228,7 +3364,7 @@ def render() -> None:
         # CSV 导出
         csv_bytes = df_export.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="📥 下载当前规划结果 (CSV)",
+            label=" 下载当前规划结果 (CSV)",
             data=csv_bytes,
             file_name=f"{selected_scenario_name}_{selected_edl_mode}_results.csv",
             mime="text/csv",
@@ -3260,14 +3396,14 @@ def render() -> None:
         ).encode("utf-8")
         
         st.download_button(
-            label="📥 下载当前规划结果 (JSON)",
+            label=" 下载当前规划结果 (JSON)",
             data=json_data,
             file_name=f"{selected_scenario_name}_{selected_edl_mode}_results.json",
             mime="application/json",
             key="download_json",
         )
         
-        st.caption("✓ 导出数据包含所有可达方案的规划结果，包括距离、成本分量等详细信息。")
+        st.caption("OK 导出数据包含所有可达方案的规划结果，包括距离、成本分量等详细信息。")
     else:
         st.warning("⚠️ 当前无可达方案，无法导出结果。")
 
@@ -3303,9 +3439,6 @@ def render() -> None:
                         alt.Chart(filtered)
                         .mark_circle(size=70, opacity=0.8)
                         .encode(
-                            x=alt.X("distance_km:Q", title="Distance (km)"),
-                            y=alt.Y("total_cost:Q", title="Total cost"),
-                            color=alt.Color("mode:N", title="Mode"),
                             tooltip=["scenario_id", "mode", "grid_mode", "distance_km", "total_cost"],
                         )
                     )
@@ -3314,3 +3447,7 @@ def render() -> None:
                     st.info(f"可视化失败: {e}")
         else:
             st.info("reports/scenario_suite_results.csv 暂未生成，无法展示批量结果。")
+
+
+def render_planner() -> None:
+    render()
