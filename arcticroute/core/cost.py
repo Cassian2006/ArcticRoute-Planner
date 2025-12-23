@@ -1564,15 +1564,20 @@ def build_cost_from_real_env(
     # ========================================================================
     need_ais = any(weight > 0 for weight in (w_corridor, w_congestion, legacy_w_ais))
     ais_norm = None
+    auto_ais = isinstance(ais_density_path, str) and ais_density_path.lower() == "auto"
+    ais_path_for_load = None if auto_ais else ais_density_path
     if need_ais:
-        ais_norm = _load_normalized_ais_density(
-            grid=grid,
-            density_source=density_source,
-            ais_density_path=ais_density_path,
-            prefer_real=True,
-            warn_if_missing=True,
-            cache_resampled=True,
-        )
+        if density_source is None and ais_path_for_load is None and not auto_ais:
+            ais_norm = None
+        else:
+            ais_norm = _load_normalized_ais_density(
+                grid=grid,
+                density_source=density_source,
+                ais_density_path=ais_path_for_load,
+                prefer_real=True,
+                warn_if_missing=True,
+                cache_resampled=True,
+            )
 
     if ais_norm is not None:
         # 始终记录原始 AIS 密度到 components（用于诊断和验证）

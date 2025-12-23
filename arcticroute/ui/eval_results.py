@@ -34,7 +34,7 @@ def load_eval_results() -> Optional[pd.DataFrame]:
         df = pd.read_csv(eval_path)
         return df
     except Exception as e:
-        st.error(f"加载评估结果失败：{e}")
+        st.warning(f"加载评估结果失败：{e}")
         return None
 
 

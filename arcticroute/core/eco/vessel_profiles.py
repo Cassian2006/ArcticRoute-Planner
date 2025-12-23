@@ -293,13 +293,28 @@ def get_default_profiles() -> Dict[str, VesselProfile]:
     return profiles
 
 
+def get_profile_catalog() -> Dict[str, VesselProfile]:
+    """
+    Return the full vessel profile catalog.
+    - Keep default profiles for backward compatibility.
+    - Add all VesselType x IceClass combinations for UI selection.
+    """
+    profiles = dict(get_default_profiles())
+    for vessel_type in VesselType:
+        for ice_class in IceClass:
+            profile = create_vessel_profile(vessel_type, ice_class)
+            if profile.key not in profiles:
+                profiles[profile.key] = profile
+    return dict(sorted(profiles.items(), key=lambda kv: kv[0]))
+
+
 def get_profile_by_key(key: str) -> VesselProfile | None:
-    return get_default_profiles().get(key)
+    return get_profile_catalog().get(key)
 
 
 def list_available_profiles() -> Dict[str, str]:
     """列出可用配置（key -> 友好名称）。"""
-    profs = get_default_profiles()
+    profs = get_profile_catalog()
     return {k: v.name for k, v in profs.items()}
 
 
