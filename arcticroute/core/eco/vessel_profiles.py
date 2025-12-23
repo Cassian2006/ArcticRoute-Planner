@@ -293,6 +293,62 @@ def get_default_profiles() -> Dict[str, VesselProfile]:
     return profiles
 
 
+def get_profile_catalog() -> Dict[str, VesselProfile]:
+    """
+    返回“全量”船型 × 冰级目录。
+
+    - 至少包含 10 个以上组合（Phase0 完整表的近似恢复）
+    - 保持 get_default_profiles() 仍然只返回 3 个默认项，用于旧 UI 与测试
+    """
+    catalog: Dict[str, VesselProfile] = {}
+
+    vessel_types = [
+        VesselType.HANDYSIZE,
+        VesselType.PANAMAX,
+        VesselType.CAPESIZE,
+    ]
+    ice_classes = list(IceClass)
+
+    for vt in vessel_types:
+        for ic in ice_classes:
+            profile = create_vessel_profile(vt, ic)
+            catalog[profile.key] = profile
+
+    # 如果外部 YAML 存在，在全量目录基础上也可以叠加
+    if PROFILES_PATH.exists():
+        try:
+            obj = yaml.safe_load(PROFILES_PATH.read_text(encoding="utf-8")) or {}
+            extra = obj.get("profiles") or {}
+            if isinstance(extra, dict):
+                for k, v in extra.items():
+                    if isinstance(v, dict):
+                        vt = v.get("vessel_type")
+                        ic = v.get("ice_class")
+                        try:
+                            vt_enum = VesselType(vt) if vt in [e.value for e in VesselType] else None
+                        except Exception:
+                            vt_enum = None
+                        try:
+                            ic_enum = IceClass(ic) if ic in [e.value for e in IceClass] else None
+                        except Exception:
+                            ic_enum = None
+                        catalog[k] = VesselProfile(
+                            key=k,
+                            name=v.get("name", k.title()),
+                            dwt=float(v.get("dwt", 50000.0)),
+                            design_speed_kn=float(v.get("design_speed_kn", 14.0)),
+                            base_fuel_per_km=float(v.get("base_fuel_per_km", 0.05)),
+                            max_ice_thickness_m=float(v.get("max_ice_thickness_m", 0.5)),
+                            ice_margin_factor=float(v.get("ice_margin_factor", 0.9)),
+                            vessel_type=vt_enum,
+                            ice_class=ic_enum,
+                        )
+        except Exception:
+            pass
+
+    return catalog
+
+
 def get_profile_by_key(key: str) -> VesselProfile | None:
     return get_default_profiles().get(key)
 

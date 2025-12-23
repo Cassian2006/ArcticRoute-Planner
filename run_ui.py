@@ -10,6 +10,8 @@ import pandas as pd
 import streamlit as st
 
 from arcticroute.ui import home, planner_minimal, eval_results
+from arcticroute.ui.data_discovery import render_data_discovery_panel
+from arcticroute.ui.i18n import tr, render_lang_toggle
 
 
 def inject_global_style() -> None:
@@ -99,15 +101,17 @@ def _nav_radio(page: str) -> str:
     此处的 radio 也遵循同样模式。
     """
     labels = {
-        "home": "封面 / Home",
-        "planner": "规划 / Planner",
-        "data": "数据 / Data",
+        "home": tr("nav_home"),
+        "planner": tr("nav_planner"),
+        "data": tr("nav_data"),
     }
     keys = list(labels.keys())
     texts = list(labels.values())
     idx = keys.index(page) if page in keys else 0
 
     with st.sidebar:
+        # 语言切换放在导航上方
+        render_lang_toggle()
         choice_text = st.radio("页面导航 / Navigation", texts, index=idx)
 
     new_page = keys[texts.index(choice_text)]
@@ -142,7 +146,11 @@ def main() -> None:
     elif page == "planner":
         planner_minimal.render()
     elif page == "data":
-        # 目前复用评估结果页作为 Data 页
+        st.header(tr("data_page_title"))
+        # 先展示数据发现与资产扫描
+        render_data_discovery_panel()
+        # 再挂载评估结果视图（如存在）
+        st.markdown("---")
         eval_results.render()
     else:
         # 保底：未知 page 时回到封面
