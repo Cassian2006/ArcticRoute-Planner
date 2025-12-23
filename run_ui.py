@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from arcticroute.ui.i18n import t, render_lang_toggle
 
 from arcticroute.ui import home, planner_minimal, eval_results
 
@@ -55,8 +56,12 @@ def main() -> None:
     st.session_state["_ar_page_config_set"] = True
     inject_global_style()
 
+    with st.sidebar:
+        st.title(t("app_title"))
+        render_lang_toggle()
+    
     page = st.sidebar.radio(
-        "页面导航",
+        t("nav"),
         options=["总览", "航线规划驾驶舱", "场景实验结果", "EDL 评估结果"],
         index=0,
     )

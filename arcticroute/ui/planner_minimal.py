@@ -21,6 +21,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from datetime import datetime
+from arcticroute.ui.i18n import t
+from arcticroute.core.planners.selector import select_backend
 
 from arcticroute.core.ais_analysis import evaluate_route_vs_ais_density
 from arcticroute.core.grid import make_demo_grid, load_real_grid_from_nc
@@ -634,6 +636,52 @@ def plan_three_routes(
     return routes_list, cost_fields, meta, scores_by_key, recommended_key
 
 
+### __PLANNER_ENGINE_SELECTOR__
+def _render_planner_engine_selector() -> dict:
+    # 保存到 session_state，供规划时使用
+    with st.sidebar.expander("🧭 " + t("planner_engine"), expanded=False):
+        mode = st.selectbox(
+            t("planner_engine"),
+            options=["auto", "astar", "polarroute_pipeline", "polarroute_external"],
+            format_func=lambda m: {
+                "auto": t("mode_auto"),
+                "astar": t("mode_astar"),
+                "polarroute_pipeline": t("mode_pipe"),
+                "polarroute_external": t("mode_ext"),
+            }[m],
+            index=0,
+        )
+        pipeline_dir = st.text_input(t("pipeline_dir"), value=st.session_state.get("pipeline_dir", ""))
+        ext_mesh = st.text_input(t("mesh_path"), value=st.session_state.get("external_vessel_mesh", ""))
+        ext_cfg  = st.text_input(t("routecfg_path"), value=st.session_state.get("external_route_config", ""))
+
+        st.session_state["planner_mode"] = mode
+        st.session_state["pipeline_dir"] = pipeline_dir
+        st.session_state["external_vessel_mesh"] = ext_mesh
+        st.session_state["external_route_config"] = ext_cfg
+
+        # 轻量可用性检查（不执行规划，只选择并显示回退原因）
+        try:
+            _, sel = select_backend(
+                mode=mode,
+                pipeline_dir=pipeline_dir or None,
+                external_vessel_mesh=ext_mesh or None,
+                external_route_config=ext_cfg or None,
+            )
+            st.write("**" + t("availability") + ":**", sel.planner_used)
+            if sel.fallback_reason:
+                st.warning(t("fallback_reason") + ": " + sel.fallback_reason)
+        except Exception as e:
+            st.warning(t("fallback_reason") + f": {type(e).__name__}")
+
+    return {
+        "planner_mode": st.session_state.get("planner_mode", "auto"),
+        "pipeline_dir": st.session_state.get("pipeline_dir", "") or None,
+        "external_vessel_mesh": st.session_state.get("external_vessel_mesh", "") or None,
+        "external_route_config": st.session_state.get("external_route_config", "") or None,
+    }
+
+
 def render() -> None:
     """
     渲染三方案规划器 UI。
@@ -664,6 +712,7 @@ def render() -> None:
     # 左侧栏参数输入
     with st.sidebar:
         status_box = st.container()
+        _planner_sel = _render_planner_engine_selector()
         st.header("规划参数")
         
         # ====================================================================
