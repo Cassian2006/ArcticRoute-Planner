@@ -44,6 +44,7 @@ from arcticroute.core.eco.vessel_profiles import (
     VesselProfile,
 )
 from arcticroute.core.eco.eco_model import estimate_route_eco
+from arcticroute.ui import data_discovery
 
 # 导入共享配置
 from arcticroute.config import EDL_MODES, list_edl_modes
@@ -169,40 +170,86 @@ def default_weights() -> dict[str, float]:
         "w_corridor": 2.0,
         "w_congestion": 1.0,
         "w_shallow": 0.0,
+        "min_depth_m": 20.0,
         "w_polaris": 0.0,
     }
 
 
-def _data_source_entry(found: bool, path: Path | str | None = None, shape=None, note: str | None = None) -> dict:
+def _data_source_entry(
+    found: bool,
+    path: Path | str | None = None,
+    shape=None,
+    note: str | None = None,
+    searched_paths: list[str] | None = None,
+) -> dict:
     return {
         "found": bool(found),
         "path": str(path) if path is not None else None,
         "shape": list(shape) if shape is not None and hasattr(shape, "__len__") else (shape if shape is None else [shape]),
         "note": note,
+        "searched_paths": searched_paths or [],
     }
 
 
-def summarize_data_sources(real_env, resolved_files, ais_density, ais_density_da, ais_density_path) -> dict:
+def summarize_data_sources(
+    real_env,
+    resolved_files,
+    ais_density,
+    ais_density_da,
+    ais_density_path,
+    discovery_summary: dict | None = None,
+) -> dict:
     """构建数据源可见性摘要，便于 UI 展示。"""
     root = Path(__file__).resolve().parents[2]
     static_dir = root / "data" / "static_assets"
+    summary = discovery_summary or {}
 
     def _first(path_list):
         return path_list[0] if path_list else None
 
+    def _entry(key: str, fallback_path=None, shape=None, default_note=None):
+        info = summary.get(key, {}) if isinstance(summary, dict) else {}
+        status_map = {}
+        if real_env is not None and getattr(real_env, "meta", None):
+            status_map = real_env.meta.get("status", {}) or {}
+        env_flag_key = {
+            "sic": "sic_loaded",
+            "swh": "wave_loaded",
+            "sit": "sit_loaded",
+            "drift": "drift_loaded",
+            "bathymetry": "bathymetry_loaded",
+        }.get(key)
+        found = status_map.get(env_flag_key, info.get("found", False) if info else False)
+        path = info.get("selected_path") if info else fallback_path
+        note = info.get("reason") if info else default_note
+        searched = info.get("searched_paths") if info else None
+        return _data_source_entry(found, path=path, shape=shape, note=note, searched_paths=searched)
+
+    sic_shape = None if real_env is None else getattr(getattr(real_env, "sic", None), "shape", None)
+    swh_shape = None if real_env is None else getattr(getattr(real_env, "wave_swh", None), "shape", None)
+    sit_shape = None if real_env is None else getattr(getattr(real_env, "ice_thickness_m", None), "shape", None)
+    drift_shape = None if real_env is None else getattr(getattr(real_env, "ice_drift", None), "shape", None)
+    bathy_shape = None if real_env is None else getattr(getattr(real_env, "bathymetry_depth_m", None), "shape", None)
+
     meta = {
-        "sic": _data_source_entry(
-            real_env is not None and getattr(real_env, "sic", None) is not None,
-            path=_first(resolved_files.sic_files) if resolved_files else None,
-            shape=None if real_env is None else getattr(getattr(real_env, "sic", None), "shape", None),
+        "sic": _entry(
+            "sic",
+            fallback_path=_first(resolved_files.sic_files) if resolved_files else None,
+            shape=sic_shape,
         ),
-        "swh": _data_source_entry(
-            real_env is not None and getattr(real_env, "wave_swh", None) is not None,
-            path=_first(resolved_files.wave_files) if resolved_files else None,
-            shape=None if real_env is None else getattr(getattr(real_env, "wave_swh", None), "shape", None),
+        "swh": _entry(
+            "swh",
+            fallback_path=_first(resolved_files.wave_files) if resolved_files else None,
+            shape=swh_shape,
         ),
-        "sit": _data_source_entry(False, note="暂未接入"),
-        "drift": _data_source_entry(False, note="暂未接入"),
+        "sit": _entry("sit", fallback_path=None, shape=sit_shape, default_note="未找到或未加载冰厚"),
+        "drift": _entry("drift", fallback_path=None, shape=drift_shape, default_note="未找到或未加载漂移"),
+        "bathymetry": _entry(
+            "bathymetry",
+            fallback_path=None,
+            shape=bathy_shape,
+            default_note="未找到或未加载水深",
+        ),
         "ais": _data_source_entry(
             ais_density is not None or ais_density_da is not None or ais_density_path is not None,
             path=(
@@ -395,6 +442,7 @@ def plan_three_routes(
     w_ais: float | None = None,
     weights: dict[str, float] | None = None,
     ym: str | None = None,
+    discovery_summary: dict | None = None,
 ) -> tuple[dict[str, RouteInfo], dict, dict, dict, str]:
     """
     规划三条路线：efficient / edl_safe / edl_robust（使用 ROUTE_PROFILES 定义的个性化权重）。
@@ -437,6 +485,7 @@ def plan_three_routes(
         "w_edl": float(w_edl if use_edl else 0.0),
         "weights": dict(weights),
     }
+    meta["discovery_summary"] = discovery_summary
     resolved_files = resolve_env_files_for_ym(ym or "")
     meta["resolved_env_files"] = {
         "sic": [str(p) for p in resolved_files.sic_files],
@@ -445,13 +494,44 @@ def plan_three_routes(
         "landmask": [str(p) for p in resolved_files.landmask_files],
     }
     w_ais_effective = w_ais if w_ais is not None else ais_weight
+
+    summary = discovery_summary or {}
+
+    def _sel(key: str):
+        info = summary.get(key, {}) if isinstance(summary, dict) else {}
+        return info.get("selected_path")
+
+    selected_paths = {
+        "sic": _sel("sic"),
+        "swh": _sel("swh"),
+        "sit": _sel("sit"),
+        "drift": _sel("drift"),
+        "bathymetry": _sel("bathymetry"),
+    }
+    meta["selected_env_paths"] = selected_paths
+
+    def _to_path(p: Path | str | None):
+        return Path(p) if isinstance(p, (str, Path)) else None
     
     # 根据 cost_mode 决定是否加载真实环境数据
     real_env = None
     if cost_mode == "real_sic_if_available":
         try:
-            real_env = load_real_env_for_grid(grid)
-            if real_env is not None and (real_env.sic is not None or real_env.wave_swh is not None):
+            real_env = load_real_env_for_grid(
+                grid,
+                nc_sic_path=_to_path(selected_paths["sic"]),
+                nc_wave_path=_to_path(selected_paths["swh"]),
+                nc_ice_thickness_path=_to_path(selected_paths["sit"]),
+                nc_drift_path=_to_path(selected_paths["drift"]),
+                nc_bathymetry_path=_to_path(selected_paths["bathymetry"]),
+            )
+            if real_env is not None and (
+                real_env.sic is not None
+                or real_env.wave_swh is not None
+                or real_env.ice_thickness_m is not None
+                or real_env.ice_drift is not None
+                or real_env.bathymetry_depth_m is not None
+            ):
                 meta["real_env_available"] = True
             else:
                 meta["fallback_reason"] = "真实环境数据不可用"
@@ -459,7 +539,11 @@ def plan_three_routes(
             print(f"[WARN] Failed to load real environment data: {e}, falling back to demo cost")
             meta["fallback_reason"] = f"加载真实环境数据失败: {e}"
             real_env = None
-    meta["data_sources"] = summarize_data_sources(real_env, resolved_files, ais_density, ais_density_da, ais_density_path)
+    meta["data_sources"] = summarize_data_sources(
+        real_env, resolved_files, ais_density, ais_density_da, ais_density_path, discovery_summary=summary
+    )
+    if real_env is not None and getattr(real_env, "meta", None):
+        meta["env_meta"] = real_env.meta
     
     # 遍历 ROUTE_PROFILES，为每个方案构建成本场并规划路线
     for profile in ROUTE_PROFILES:
@@ -490,6 +574,10 @@ def plan_three_routes(
                         real_env, 
                         ice_penalty=actual_ice_penalty, 
                         wave_penalty=actual_wave_penalty, 
+                            w_sit=float(weights.get("w_sit", 0.0)),
+                            w_drift=float(weights.get("w_drift", 0.0)),
+                            w_shallow=float(weights.get("w_shallow", 0.0)),
+                            min_depth_m=float(weights.get("min_depth_m", 20.0)),
                         vessel_profile=vessel,
                         use_edl=use_edl, 
                         w_edl=actual_w_edl,
@@ -755,6 +843,12 @@ def render() -> None:
 
     ais_density_path: Path | None = None
 
+    # 数据发现：用于权重可用性与路径选择
+    discovery_snapshot = data_discovery.scan_all()
+    discovery_summary = data_discovery.summarize_discovery(discovery_snapshot)
+    discovery_flags = data_discovery.availability_flags(discovery_summary)
+    st.session_state["latest_discovery_summary"] = discovery_summary
+
     # 左侧栏参数输入
     with st.sidebar:
         status_box = st.container()
@@ -873,34 +967,46 @@ def render() -> None:
             step=0.5,
             help="对极端拥挤区域的二次惩罚。",
         )
+        sit_available = discovery_flags.get("sit", False)
         weight_state["w_sit"] = col_w6.slider(
-            "冰厚权重 (w_sit，暂未启用)",
+            "冰厚权重 (w_sit)",
             min_value=0.0,
             max_value=10.0,
             value=float(weight_state["w_sit"]),
             step=0.5,
-            help="冰厚成本占位，当前成本构建尚未启用。",
-            disabled=True,
+            help="当冰厚栅格可用时叠加冰厚成本；0 表示关闭。",
+            disabled=not sit_available,
         )
 
         col_w7, col_w8 = st.columns(2)
+        drift_available = discovery_flags.get("drift", False)
         weight_state["w_drift"] = col_w7.slider(
-            "漂移权重 (w_drift，暂未启用)",
+            "漂移权重 (w_drift)",
             min_value=0.0,
             max_value=10.0,
             value=float(weight_state["w_drift"]),
             step=0.5,
-            help="冰漂/流速成本占位，当前未在成本中使用。",
-            disabled=True,
+            help="当冰漂栅格可用时叠加漂移成本；0 表示关闭。",
+            disabled=not drift_available,
         )
+        bathy_available = discovery_flags.get("bathymetry", False)
         weight_state["w_shallow"] = col_w8.slider(
-            "浅滩惩罚 (w_shallow，暂未启用)",
+            "浅滩惩罚 (w_shallow)",
             min_value=0.0,
             max_value=10.0,
             value=float(weight_state["w_shallow"]),
             step=0.5,
-            help="浅水深度惩罚占位，当前未在成本中使用。",
-            disabled=True,
+            help="浅水深度惩罚；需要 bathymetry 栅格（IBCAO*.nc）。",
+            disabled=not bathy_available,
+        )
+        weight_state["min_depth_m"] = col_w8.number_input(
+            "最小安全水深 (m)",
+            min_value=1.0,
+            max_value=200.0,
+            value=float(weight_state.get("min_depth_m", 20.0)),
+            step=1.0,
+            help="浅滩惩罚的参考水深，默认 20m。",
+            disabled=not bathy_available,
         )
         weight_state["w_polaris"] = st.slider(
             "Polaris/附加惩罚 (w_polaris，暂未启用)",
@@ -911,6 +1017,22 @@ def render() -> None:
             help="留作后续 Polaris 规则，当前未参与成本计算。",
             disabled=True,
         )
+
+        def _warn_missing(key: str, label: str, expect_hint: str) -> None:
+            if discovery_flags.get(key, False):
+                return
+            info = discovery_summary.get(key, {}) if isinstance(discovery_summary, dict) else {}
+            reason = info.get("reason") or "未找到匹配文件"
+            patterns = info.get("patterns") or []
+            searched = info.get("searched_paths") or []
+            pat_text = f"期望文件名包含：{patterns}" if patterns else expect_hint
+            search_text = "; 搜索路径：" + ("; ".join(searched) if searched else "无")
+            st.warning(f"{label} 缺失：{reason}；{pat_text}{search_text}", icon="⚠️")
+
+        _warn_missing("sit", "SIT/冰厚", "期望 *sit*.nc 或 ice_thickness.nc")
+        _warn_missing("drift", "Drift/漂移", "期望 *drift*.nc 或 ice_drift.nc")
+        if not bathy_available:
+            _warn_missing("bathymetry", "Bathymetry/水深", "优先 IBCAO*.nc；tif 暂不支持")
 
         st.session_state["weights"] = weight_state
         wave_penalty = float(weight_state["w_swh"])
@@ -1590,6 +1712,7 @@ def render() -> None:
             w_ais=w_ais,
             weights=weight_state,
             ym=st.session_state.get("ym"),
+            discovery_summary=discovery_summary,
         )
         
         # 完成第 5、6 个节点
@@ -1636,17 +1759,23 @@ def render() -> None:
         "drift": "Drift",
         "ais": "AIS",
         "static_assets": "静态资产",
+        "bathymetry": "Bathymetry",
     }
     data_sources = cost_meta.get("data_sources", {})
     for key, label in source_labels.items():
         info = data_sources.get(key, {}) if isinstance(data_sources, dict) else {}
         found = info.get("found", False)
-        status = "✅ found" if found else "⚠ missing"
+        status = "✅" if found else "❌"
         path = info.get("path") or "N/A"
         shape = info.get("shape")
         shape_text = f"{shape}" if shape else "N/A"
         note = info.get("note")
-        st.caption(f"{label}: {status} | path={path} | shape={shape_text}" + (f" | note={note}" if note else ""))
+        searched_paths = info.get("searched_paths") or []
+        st.caption(f"{status} {label}: path={path} | shape={shape_text}" + (f" | reason={note}" if note else ""))
+        if searched_paths:
+            with st.expander(f"{label} 搜索路径", expanded=False):
+                for p in searched_paths:
+                    st.code(p, language="text")
 
 
     # 检查是否有可达的路线
@@ -2388,6 +2517,9 @@ def render() -> None:
                 "edl_unc_cost": breakdown.component_totals.get("edl_uncertainty_penalty", None) if breakdown else None,
                 "ice_cost": breakdown.component_totals.get("ice_risk", None) if breakdown else None,
                 "wave_cost": breakdown.component_totals.get("wave_risk", None) if breakdown else None,
+                "sit_cost": breakdown.component_totals.get("sit_cost", None) if breakdown else None,
+                "drift_cost": breakdown.component_totals.get("drift_cost", None) if breakdown else None,
+                "shallow_cost": breakdown.component_totals.get("shallow_cost", None) if breakdown else None,
                 "ice_class_soft_cost": breakdown.component_totals.get("ice_class_soft", None) if breakdown else None,
                 "ice_class_hard_cost": breakdown.component_totals.get("ice_class_hard", None) if breakdown else None,
                 "vessel_profile": selected_vessel_key,
@@ -3413,6 +3545,7 @@ def render() -> None:
                 "grid_source": grid_source_label,
                 "weights": cost_meta.get("weights"),
                 "data_sources": cost_meta.get("data_sources"),
+                "env_meta": cost_meta.get("env_meta"),
             }
             export_data.append(export_record)
     

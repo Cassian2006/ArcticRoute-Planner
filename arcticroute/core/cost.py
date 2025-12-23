@@ -1074,6 +1074,10 @@ def build_cost_from_real_env(
     env: RealEnvLayers,
     ice_penalty: float = 4.0,
     wave_penalty: float = 0.0,
+    w_sit: float = 0.0,
+    w_drift: float = 0.0,
+    w_shallow: float = 0.0,
+    min_depth_m: float = 20.0,
     vessel_profile: Any | None = None,  # VesselProfile 类型暂未定义
     ice_class_soft_weight: float = 3.0,
     ym: str | None = None,
@@ -1094,7 +1098,7 @@ def build_cost_from_real_env(
     scenario_name: str | None = None,
 ) -> CostField:
     """
-    使用真实环境场（sic + wave_swh + ice_thickness_m）构建成本场。
+    使用真实环境场（sic + wave_swh + ice_thickness_m + ice_drift + bathymetry）构建成本场。
 
     成本规则：
       - base_distance: 海洋格 1.0，陆地格 np.inf
@@ -1102,6 +1106,9 @@ def build_cost_from_real_env(
       - wave_risk: 若有 wave_swh 且 wave_penalty > 0，则 wave_penalty * (wave_norm^1.5)；否则 0
       - ice_class_soft: 若有 ice_thickness_m 和 vessel_profile，则对超出安全范围的冰厚施加软惩罚
       - ice_class_hard: 若有 ice_thickness_m 和 vessel_profile，则对超出硬限制的冰厚设置 inf
+      - sit_cost: 若有冰厚且 w_sit>0，按归一化冰厚叠加成本
+      - drift_cost: 若有冰漂速且 w_drift>0，按归一化漂移速度叠加成本
+      - shallow_cost: 若有水深且 w_shallow>0，按 min_depth_m 计算浅滩惩罚
       - edl_risk: 若 use_edl=True 且 w_edl > 0，则通过 EDL 模块计算的风险分数
       - edl_uncertainty_penalty: 若 use_edl_uncertainty=True 且 edl_uncertainty_weight > 0，则基于 EDL 不确定性的额外惩罚
 
@@ -1151,6 +1158,10 @@ def build_cost_from_real_env(
         env: RealEnvLayers 对象，包含 sic、wave_swh 和/或 ice_thickness_m 数据
         ice_penalty: 冰风险权重（默认 4.0）
         wave_penalty: 波浪风险权重（默认 0.0，即不考虑波浪）
+        w_sit: 冰厚成本权重（默认 0.0）
+        w_drift: 漂移成本权重（默认 0.0）
+        w_shallow: 浅滩成本权重（默认 0.0）
+        min_depth_m: 期望最小水深（米），用于浅滩惩罚（默认 20m）
         vessel_profile: VesselProfile 对象，用于冰级约束；若为 None，则不应用冰级约束
         ice_class_soft_weight: 冰级软约束的权重系数（默认 3.0）
         w_edl: EDL 风险权重（默认 0.0，即不启用 EDL）
@@ -1269,16 +1280,37 @@ def build_cost_from_real_env(
                 f"using zero wave_risk"
             )
 
-    # 总成本 = base_distance + ice_risk + wave_risk
-    cost = base_distance + ice_risk + wave_risk
-    # 确保陆地格点为 inf
-    cost = np.where(land_mask, np.inf, cost)
-
-    # 构建 components 字典
+    # sit / drift / shallow 成本（默认全 0，便于 UI 展示）
+    sit_cost = np.zeros((ny, nx), dtype=float)
+    if env.ice_thickness_m is not None and w_sit > 0:
+        thickness = np.clip(env.ice_thickness_m, 0.0, np.nanmax(env.ice_thickness_m))
+        sit_norm = np.clip(thickness / 2.0, 0.0, 1.0)
+        sit_cost = w_sit * np.where(land_mask, np.inf, sit_norm)
     components = {
         "base_distance": base_distance,
         "ice_risk": ice_risk,
+        "sit_cost": sit_cost,
     }
+
+    drift_cost = np.zeros((ny, nx), dtype=float)
+    if env.ice_drift is not None and w_drift > 0:
+        drift_ref = 1.0  # 参考 1m/s，超出即封顶
+        drift_norm = np.clip(env.ice_drift / drift_ref, 0.0, 1.0)
+        drift_cost = w_drift * np.where(land_mask, np.inf, drift_norm)
+    components["drift_cost"] = drift_cost
+
+    shallow_cost = np.zeros((ny, nx), dtype=float)
+    if env.bathymetry_depth_m is not None and w_shallow > 0 and min_depth_m > 0:
+        depth = np.asarray(env.bathymetry_depth_m, dtype=float)
+        depth = np.where(np.isfinite(depth), depth, 0.0)
+        ratio = np.clip((min_depth_m - depth) / max(min_depth_m, 1e-6), 0.0, 1.0)
+        shallow_cost = w_shallow * np.where(land_mask, np.inf, ratio)
+    components["shallow_cost"] = shallow_cost
+
+    # 总成本 = base_distance + ice_risk + wave_risk + 新增成本
+    cost = base_distance + ice_risk + wave_risk + sit_cost + drift_cost + shallow_cost
+    # 确保陆地格点为 inf
+    cost = np.where(land_mask, np.inf, cost)
     
     # 如果有 wave 分量且 wave_penalty > 0，加入 wave_risk
     if env.wave_swh is not None and wave_penalty > 0:
@@ -1630,7 +1662,17 @@ def build_cost_from_real_env(
         "wave_power_effective": wave_exp,
         "sic_power_source": sic_power_source,
         "wave_power_source": wave_power_source,
+        "weights_used": {
+            "ice_penalty": ice_penalty,
+            "wave_penalty": wave_penalty,
+            "w_sit": w_sit,
+            "w_drift": w_drift,
+            "w_shallow": w_shallow,
+            "min_depth_m": min_depth_m,
+        },
     }
+    if getattr(env, "meta", None):
+        meta["env_meta"] = env.meta
     
     return CostField(
         grid=grid,

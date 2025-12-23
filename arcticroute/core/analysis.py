@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -80,6 +80,8 @@ class RouteCostBreakdown:
     # 沿程信息
     s_km: List[float]
     component_along_path: Dict[str, List[float]]
+    meta: Dict[str, Any] | None = None
+    meta: Dict[str, Any] | None = None
 
 
 @dataclass
@@ -153,6 +155,7 @@ def compute_route_cost_breakdown(
             component_fractions={},
             s_km=[],
             component_along_path={},
+            meta=getattr(cost_field, "meta", None),
         )
 
     # 将 route_latlon 映射到 (i, j) 索引
@@ -221,6 +224,7 @@ def compute_route_cost_breakdown(
         component_fractions=component_fractions,
         s_km=s_km,
         component_along_path=component_along_path,
+        meta=getattr(cost_field, "meta", None),
     )
 
 

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -91,7 +91,10 @@ class RealEnvLayers:
     wave_swh: Optional[np.ndarray] = None
     land_mask: Optional[np.ndarray] = None
     ice_thickness_m: Optional[np.ndarray] = None
+    ice_drift: Optional[np.ndarray] = None  # 漂移速度幅值（m/s）
+    bathymetry_depth_m: Optional[np.ndarray] = None  # 水深（正值，米）
     edl_output: Optional[dict] = None
+    meta: dict = field(default_factory=dict)
 
 
 
@@ -353,9 +356,15 @@ def load_real_env_for_grid(
     nc_sic_path: Optional[Path] = None,
     nc_wave_path: Optional[Path] = None,
     nc_ice_thickness_path: Optional[Path] = None,
+    nc_drift_path: Optional[Path] = None,
+    nc_bathymetry_path: Optional[Path] = None,
     sic_var_candidates: Tuple[str, ...] = ("sic", "SIC", "ice_concentration"),
     wave_var_candidates: Tuple[str, ...] = ("wave_swh", "swh", "SWH"),
     ice_thickness_var_candidates: Tuple[str, ...] = ("sithick", "sit", "ice_thickness", "ice_thk"),
+    drift_u_var_candidates: Tuple[str, ...] = ("uice", "u_drift", "drift_u", "ice_drift_u", "u"),
+    drift_v_var_candidates: Tuple[str, ...] = ("vice", "v_drift", "drift_v", "ice_drift_v", "v"),
+    drift_speed_var_candidates: Tuple[str, ...] = ("ice_drift", "drift", "drift_speed"),
+    bathymetry_var_candidates: Tuple[str, ...] = ("elevation", "z", "depth", "bathymetry", "Band1"),
     time_index: int = 0,
     ym: Optional[str] = None,
 ) -> Optional[RealEnvLayers]:
@@ -376,12 +385,20 @@ def load_real_env_for_grid(
     landmask_files = resolved.landmask_files
     grid_files = resolved.grid_files
 
-    if not sic_files and not grid_files:
+    env_meta: dict = {
+        "paths": {},
+        "status": {},
+        "reasons": {},
+    }
+
+    if not sic_files and not grid_files and nc_sic_path is None and nc_wave_path is None:
         print(f"[ENV] no real grid/SIC files found for ym={ym}, returning None")
+        env_meta["reasons"]["sic"] = "未找到 sic 或 grid 文件"
         return None
 
     try:
         grid_obj = grid
+        grid_reason = None
         if grid_obj is None or (sic_files or grid_files or wave_files):
             # 选择用于推断网格的来源文件：优先 sic，其次 wave，最后独立 grid 文件
             def _first_existing(paths: list[Path]) -> Path | None:
@@ -396,10 +413,14 @@ def load_real_env_for_grid(
             grid_source = (
                 _first_existing(list(sic_files))
                 or _first_existing(list(wave_files))
+                or _first_existing([Path(nc_ice_thickness_path)] if nc_ice_thickness_path else [])
+                or _first_existing([Path(nc_drift_path)] if nc_drift_path else [])
+                or _first_existing([Path(nc_bathymetry_path)] if nc_bathymetry_path else [])
                 or _first_existing(list(grid_files))
             )
 
             if grid_source is not None:
+                env_meta["paths"]["grid"] = str(grid_source)
                 with xr.open_dataset(grid_source, decode_times=False) as ds_grid:
                     lat_da = None
                     for name in ["latitude", "lat", "LAT", "y"]:
@@ -412,7 +433,7 @@ def load_real_env_for_grid(
                             lon_da = ds_grid[name]
                             break
                     if lat_da is None or lon_da is None:
-                        # 无有效经纬度，保留现有 grid_obj 或稍后回退
+                        grid_reason = "grid 文件缺少 latitude/longitude"
                         lat2d = lon2d = None
                     else:
                         lat_vals = lat_da.values
@@ -423,15 +444,20 @@ def load_real_env_for_grid(
                             lat2d, lon2d = lat_vals, lon_vals
                         if grid_obj is None or grid_obj.shape() != lat2d.shape:
                             grid_obj = Grid2D(lat2d=lat2d, lon2d=lon2d)
-            # 若仍没有 grid_obj，则保留传入的 grid（可能为 None），由后续逻辑决定回退
+            else:
+                grid_reason = "未找到可用于推断经纬度的文件"
+        if grid_reason:
+            env_meta["reasons"]["grid"] = grid_reason
 
         sic = None
+        sic_reason = None
         if sic_files:
-            sic_path = sic_files[0]
+            sic_path = Path(sic_files[0])
+            env_meta["paths"]["sic"] = str(sic_path)
             try:
                 with xr.open_dataset(sic_path, decode_times=False) as ds_sic:
                     sic_da = None
-                    for name in ("sic", "SIC", "ice_concentration"):
+                    for name in sic_var_candidates:
                         if name in ds_sic:
                             sic_da = ds_sic[name]
                             break
@@ -442,18 +468,25 @@ def load_real_env_for_grid(
                         sic = np.asarray(sic_raw, dtype=float)
                         if np.nanmax(sic) > 1.5:
                             sic = sic / 100.0
-            except Exception:
-                # sic 不可用时保持 None
-                sic = None
+                    else:
+                        sic_reason = "变量未找到"
+            except Exception as e:
+                sic_reason = f"加载 sic 失败: {e}"
+        else:
+            sic_reason = "未提供 sic 文件"
+        if sic is None and sic_reason:
+            env_meta["reasons"]["sic"] = sic_reason
 
         wave = None
+        wave_reason = None
         if wave_files:
             wave_path = Path(wave_files[0])
+            env_meta["paths"]["wave_swh"] = str(wave_path)
             try:
                 if wave_path.exists():
                     with xr.open_dataset(wave_path, decode_times=False) as ds_wave:
                         wave_da = None
-                        for name in ("wave_swh", "swh", "SWH"):
+                        for name in wave_var_candidates:
                             if name in ds_wave:
                                 wave_da = ds_wave[name]
                                 break
@@ -462,8 +495,14 @@ def load_real_env_for_grid(
                             if wave_raw.ndim == 3:
                                 wave_raw = wave_raw[min(time_index, wave_raw.shape[0] - 1), :, :]
                             wave = np.asarray(wave_raw, dtype=float)
-            except Exception:
-                wave = None
+                        else:
+                            wave_reason = "变量未找到"
+            except Exception as e:
+                wave_reason = f"加载 wave 失败: {e}"
+        else:
+            wave_reason = "未提供 wave 文件"
+        if wave is None and wave_reason:
+            env_meta["reasons"]["wave_swh"] = wave_reason
 
         land_mask = None
         if landmask_files and grid_obj is not None:
@@ -478,7 +517,9 @@ def load_real_env_for_grid(
 
         # 尝试加载冰厚（可选）
         ice_thickness = None
+        ice_reason = None
         if nc_ice_thickness_path is not None and grid_obj is not None:
+            env_meta["paths"]["sit"] = str(nc_ice_thickness_path)
             try:
                 with xr.open_dataset(nc_ice_thickness_path, decode_times=False) as ds_ice:
                     ice_da = None
@@ -496,10 +537,18 @@ def load_real_env_for_grid(
                             print(
                                 f"[ENV] warning: ice_thickness shape {ice_thickness.shape} != grid shape {grid_obj.shape()}, skipping ice_thickness"
                             )
+                            ice_reason = "shape 不匹配"
                             ice_thickness = None
+                    else:
+                        ice_reason = "变量未找到"
             except Exception as e:
                 print(f"[ENV] warning: failed to load ice_thickness: {e}")
+                ice_reason = f"加载失败: {e}"
                 ice_thickness = None
+        elif nc_ice_thickness_path is None:
+            ice_reason = "未提供 sit 文件"
+        else:
+            ice_reason = "缺少网格，无法加载冰厚"
 
         # 若冰厚几乎全 NaN，视作缺失
         if ice_thickness is not None:
@@ -509,14 +558,124 @@ def load_real_env_for_grid(
                     print(
                         f"[ENV] ice_thickness is mostly NaN (finite_frac={finite_frac:.6f}), treating as missing"
                     )
+                    ice_reason = "值几乎全为 NaN"
                     ice_thickness = None
             except Exception:
                 ice_thickness = None
 
-        # 如果既没有 sic 也没有 wave 数据，则返回 None（符合测试预期）
-        if sic is None and wave is None:
-            print(f"[ENV] no sic/wave available for ym={ym}; returning None")
+        if ice_reason:
+            env_meta["reasons"]["sit"] = ice_reason
+
+        # 漂移（可选）
+        drift = None
+        drift_reason = None
+        if nc_drift_path is not None and grid_obj is not None:
+            drift_path = Path(nc_drift_path)
+            env_meta["paths"]["drift"] = str(drift_path)
+            try:
+                with xr.open_dataset(drift_path, decode_times=False) as ds_drift:
+                    drift_u_da = None
+                    drift_v_da = None
+                    for name in drift_u_var_candidates:
+                        if name in ds_drift:
+                            drift_u_da = ds_drift[name]
+                            break
+                    for name in drift_v_var_candidates:
+                        if name in ds_drift:
+                            drift_v_da = ds_drift[name]
+                            break
+
+                    if drift_u_da is not None and drift_v_da is not None:
+                        u = drift_u_da.values
+                        v = drift_v_da.values
+                        if u.ndim == 3:
+                            u = u[min(time_index, u.shape[0] - 1), :, :]
+                        if v.ndim == 3:
+                            v = v[min(time_index, v.shape[0] - 1), :, :]
+                        if u.shape == v.shape == grid_obj.shape():
+                            drift = np.sqrt(np.square(u) + np.square(v)).astype(float)
+                        else:
+                            drift_reason = f"drift shape mismatch {u.shape} / {v.shape} vs {grid_obj.shape()}"
+                    else:
+                        drift_speed_da = None
+                        for name in drift_speed_var_candidates:
+                            if name in ds_drift:
+                                drift_speed_da = ds_drift[name]
+                                break
+                        if drift_speed_da is not None:
+                            drift_raw = drift_speed_da.values
+                            if drift_raw.ndim == 3:
+                                drift_raw = drift_raw[min(time_index, drift_raw.shape[0] - 1), :, :]
+                            if drift_raw.shape == grid_obj.shape():
+                                drift = np.asarray(drift_raw, dtype=float)
+                            else:
+                                drift_reason = f"drift speed shape {drift_raw.shape} != grid {grid_obj.shape()}"
+                        else:
+                            drift_reason = "未找到 drift 变量 (u/v 或 drift_speed)"
+            except Exception as e:
+                drift_reason = f"加载 drift 失败: {e}"
+        elif nc_drift_path is None:
+            drift_reason = "未提供 drift 文件"
+        elif grid_obj is None:
+            drift_reason = "缺少网格，无法加载 drift"
+        if drift_reason:
+            env_meta["reasons"]["drift"] = drift_reason
+
+        # 水深（可选，优先 NC）
+        bathy = None
+        bathy_reason = None
+        if nc_bathymetry_path is not None and grid_obj is not None:
+            bathy_path = Path(nc_bathymetry_path)
+            env_meta["paths"]["bathymetry"] = str(bathy_path)
+            try:
+                with xr.open_dataset(bathy_path, decode_times=False) as ds_bathy:
+                    bathy_da = None
+                    for name in bathymetry_var_candidates:
+                        if name in ds_bathy:
+                            bathy_da = ds_bathy[name]
+                            break
+                    if bathy_da is not None:
+                        bathy_raw = bathy_da.values
+                        if bathy_raw.ndim == 3:
+                            bathy_raw = bathy_raw[min(time_index, bathy_raw.shape[0] - 1), :, :]
+                        bathy = np.asarray(bathy_raw, dtype=float)
+                        if bathy.shape != grid_obj.shape():
+                            bathy_reason = f"bathymetry shape {bathy.shape} != grid {grid_obj.shape()}"
+                            bathy = None
+                        else:
+                            # elevation: 海洋为负值，转换为正的水深（米），陆地设为 0
+                            bathy = np.where(np.isfinite(bathy), np.where(bathy < 0, -bathy, 0.0), np.nan)
+                    else:
+                        bathy_reason = "未找到 bathymetry 变量"
+            except Exception as e:
+                bathy_reason = f"加载 bathymetry 失败: {e}"
+        elif nc_bathymetry_path is None:
+            bathy_reason = "未提供 bathymetry"
+        elif grid_obj is None:
+            bathy_reason = "缺少网格，无法加载 bathymetry"
+        if bathy_reason:
+            env_meta["reasons"]["bathymetry"] = bathy_reason
+
+        # 如果全部缺失则返回 None
+        if (
+            sic is None
+            and wave is None
+            and ice_thickness is None
+            and drift is None
+            and bathy is None
+        ):
+            env_meta["reasons"]["env"] = "sic/wave/sit/drift/bathymetry 均缺失"
+            print(f"[ENV] no sic/wave/sit/drift/bathymetry available for ym={ym}; returning None")
             return None
+
+        env_meta["status"] = {
+            "sic_loaded": sic is not None,
+            "wave_loaded": wave is not None,
+            "sit_loaded": ice_thickness is not None,
+            "drift_loaded": drift is not None,
+            "bathymetry_loaded": bathy is not None,
+            "land_mask_loaded": land_mask is not None,
+        }
 
         env = RealEnvLayers(
             grid=grid_obj,
@@ -524,7 +683,10 @@ def load_real_env_for_grid(
             wave_swh=wave,
             land_mask=land_mask,
             ice_thickness_m=ice_thickness,
+            ice_drift=drift,
+            bathymetry_depth_m=bathy,
             edl_output=None,
+            meta=env_meta,
         )
 
         if grid_obj is not None:
@@ -533,9 +695,12 @@ def load_real_env_for_grid(
             wave_status = "OK" if wave is not None else "None"
             land_status = "OK" if land_mask is not None else "None"
             ice_status = "OK" if ice_thickness is not None else "None"
+            drift_status = "OK" if drift is not None else "None"
+            bathy_status = "OK" if bathy is not None else "None"
             print(
                 f"[ENV] loaded real env for ym={ym}: grid={ny}x{nx}, "
-                f"sic={sic_status}, wave={wave_status}, land={land_status}, ice_thickness={ice_status}"
+                f"sic={sic_status}, wave={wave_status}, land={land_status}, "
+                f"ice_thickness={ice_status}, drift={drift_status}, bathy={bathy_status}"
             )
         return env
 
