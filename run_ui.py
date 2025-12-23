@@ -8,9 +8,38 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
+import subprocess
 
 import pandas as pd
 import streamlit as st
+
+
+def _build_fingerprint():
+    try:
+        head = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+        br = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], text=True).strip()
+    except Exception:
+        head, br = "nogit", "nogit"
+    return br, head
+
+
+BR, HEAD = _build_fingerprint()
+st.set_page_config(page_title="ArcticRoute Planner", layout="wide")
+
+# 运行时指纹（务必放最上面，任何页面都能看到）
+st.sidebar.markdown("### 🔎 Runtime Fingerprint")
+st.sidebar.code(
+    f\"branch={BR}\\ncommit={HEAD}\\nrun_ui={__file__}\\n\"
+    f\"cwd={os.getcwd()}\\nPYTHONPATH={os.environ.get('PYTHONPATH','')}\"
+)
+
+try:
+    import arcticroute.ui.planner_minimal as _pm
+
+    st.sidebar.code(f\"planner_minimal={_pm.__file__}\")
+except Exception as e:
+    st.sidebar.error(f\"planner_minimal import failed: {e}\")
 
 from arcticroute.ui import home, planner_minimal, eval_results
 
