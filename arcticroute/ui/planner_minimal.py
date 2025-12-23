@@ -310,7 +310,7 @@ def _update_pipeline_node(
             with st.session_state.pipeline_flow_placeholder.container():
                 render_pipeline_flow(
                     nodes,
-                    title="🔄 规划流程管线",
+                    title=" 规划流程管线",
                     expanded=st.session_state.get("pipeline_flow_expanded", True),
                 )
         except Exception:
@@ -814,12 +814,12 @@ def render() -> None:
             st.session_state["ais_density_path"] = None
             st.session_state["ais_density_path_selected"] = None
             st.session_state["ais_density_cache_key"] = None
-            st.info(f"🔄 网格已切换（{previous_grid_sig[:20]}... → {current_grid_sig[:20]}...），已清空 AIS 密度选择以避免维度错配")
+            st.info(f" 网格已切换（{previous_grid_sig[:20]}... → {current_grid_sig[:20]}...），已清空 AIS 密度选择以避免维度错配")
         
         if current_grid_sig is not None:
             st.session_state["previous_grid_signature"] = current_grid_sig
         grid_sig = current_grid_sig
-        ais_status_check = "✓" if ais_data_available else "✗"
+        ais_status_check = "" if ais_data_available else ""
         
         # 处理 grid_sig 可能为 None 的情况
         if grid_sig is None:
@@ -901,7 +901,7 @@ def render() -> None:
         with pipeline_flow_placeholder.container():
             render_pipeline_flow(
                 st.session_state.pipeline_flow_nodes,
-                title="🔄 规划流程管线",
+                title=" 规划流程管线",
                 expanded=st.session_state.get("pipeline_flow_expanded", True),
             )
     
@@ -980,7 +980,7 @@ def render() -> None:
                 # 情况 1：用户未选择 AIS 文件（自动模式，交由成本构建阶段匹配/重采样）
                 if ais_density_path_obj is None:
                     _update_pipeline_node(3, "done", "自动选择：运行时加载", seconds=0.1)
-                    st.info("ℹ️ AIS 采用自动选择/重采样，将在成本阶段按网格自动匹配。")
+                    st.info("ℹ AIS 采用自动选择/重采样，将在成本阶段按网格自动匹配。")
                 
                 # 情况 2：文件存在，尝试加载
                 elif ais_density_path_obj.exists():
@@ -1001,11 +1001,11 @@ def render() -> None:
                             })
                             # 成功加载，标记为 done
                             _update_pipeline_node(3, "done", f"AIS={ais_density.shape[0]}×{ais_density.shape[1]} source={ais_density_path_obj.name}", seconds=0.3)
-                            st.success(f"✅ 已加载 AIS 拥挤度密度数据，栅格={ais_info['shape']}")
+                            st.success(f" 已加载 AIS 拥挤度密度数据，栅格={ais_info['shape']}")
                         else:
                             # 文件无效
                             _update_pipeline_node(3, "done", "跳过：文件格式无效", seconds=0.1)
-                            st.warning("⚠️ AIS 密度文件格式无效，已跳过")
+                            st.warning(" AIS 密度文件格式无效，已跳过")
                             w_ais = 0.0
                             w_ais_corridor = 0.0
                             w_ais_congestion = 0.0
@@ -1014,7 +1014,7 @@ def render() -> None:
                     except Exception as e:
                         # 加载失败
                         _update_pipeline_node(3, "fail", f"加载失败：{str(e)[:50]}", seconds=0.2)
-                        st.error(f"❌ 加载 AIS 密度失败：{e}")
+                        st.error(f" 加载 AIS 密度失败：{e}")
                         w_ais = 0.0
                         w_ais_corridor = 0.0
                         w_ais_congestion = 0.0
@@ -1023,7 +1023,7 @@ def render() -> None:
                 # 情况 3：文件不存在
                 else:
                     _update_pipeline_node(3, "done", f"跳过：文件不存在", seconds=0.1)
-                    st.warning(f"⚠️ AIS 密度文件不存在：{ais_density_path_obj}")
+                    st.warning(f" AIS 密度文件不存在：{ais_density_path_obj}")
                     w_ais = 0.0
                     w_ais_corridor = 0.0
                     w_ais_congestion = 0.0
@@ -1032,7 +1032,7 @@ def render() -> None:
             except Exception as e:
                 # 意外错误
                 _update_pipeline_node(3, "fail", f"异常：{str(e)[:50]}", seconds=0.2)
-                st.error(f"❌ AIS 加载异常：{e}")
+                st.error(f" AIS 加载异常：{e}")
                 w_ais = 0.0
                 w_ais_corridor = 0.0
                 w_ais_congestion = 0.0
@@ -1048,7 +1048,7 @@ def render() -> None:
                 with st.session_state.pipeline_flow_placeholder.container():
                     render_pipeline_flow(
                         st.session_state.pipeline_flow_nodes,
-                        title="🔧 规划流程管线",
+                        title=" 规划流程管线",
                         expanded=st.session_state.get("pipeline_flow_expanded", True),
                     )
             except Exception:
@@ -1090,21 +1090,21 @@ def render() -> None:
             # pydeck
             try:
                 import pydeck  # type: ignore
-                st.caption("可视化: pydeck 可用 ✅")
+                st.caption("可视化: pydeck 可用 ")
             except Exception:
                 st.warning("可视化: pydeck 未安装，将无法在地图上绘制路径。请运行 `pip install pydeck`。")
             
             # scipy（用于更高质量的 landmask 重采样）
             try:
                 import scipy  # type: ignore
-                st.caption("重采样: SciPy 可用 ✅（landmask 将使用 KDTree 最近邻，质量更好）")
+                st.caption("重采样: SciPy 可用 （landmask 将使用 KDTree 最近邻，质量更好）")
             except Exception:
                 st.info("重采样: SciPy 未安装，将使用简易最近邻重采样（已自动降级）。建议 `pip install scipy` 提升质量与速度。")
             
             # torch（用于 EDL 模型）
             try:
                 import torch  # type: ignore
-                st.caption("EDL: PyTorch 可用 ✅")
+                st.caption("EDL: PyTorch 可用 ")
             except Exception:
                 st.info("EDL: PyTorch 未安装，EDL 风险将使用占位/常数风险（日志中含有 EDL fallback 提示）。")
             
@@ -1165,9 +1165,9 @@ def render() -> None:
     # 网格加载状态提示
     if grid_source_label == "real":
         ny, nx = grid.shape()
-        st.success(f"✅ 使用真实环境网格（{ny}×{nx}）")
+        st.success(f" 使用真实环境网格（{ny}×{nx}）")
     elif grid_mode == "real":
-        st.warning("⚠️ 真实环境不可用，已回退到 demo 网格")
+        st.warning(" 真实环境不可用，已回退到 demo 网格")
     else:
         st.info("当前使用演示网格")
 
@@ -1472,11 +1472,11 @@ def render() -> None:
         main_key, main_val = max(filtered.items(), key=lambda kv: kv[1])
         frac = main_val / total if total else 0.0
         emoji_map = {
-            "ice_risk": "🧊",
-            "wave_risk": "🌊",
-            "ais_density": "🚢",
-            "edl_risk": "🧠",
-            "edl_uncertainty_penalty": "❓",
+            "ice_risk": "",
+            "wave_risk": "",
+            "ais_density": "",
+            "edl_risk": "",
+            "edl_uncertainty_penalty": "",
         }
         return f"主风险：{emoji_map.get(main_key, '')} {main_key} {frac:.0%}"
 
@@ -1671,7 +1671,7 @@ def render() -> None:
             st.info(f"雷达图绘制失败：{e}")
 
     tab_cost, tab_profile, tab_edl, tab_ais = st.tabs(
-        ["📊 成本分解（balanced/edl_safe）", "📈 沿程剖面", "🧠 EDL 不确定性", "🚢 AIS 拥挤度 & 拥堵"]
+        [" 成本分解（balanced/edl_safe）", " 沿程剖面", " EDL 不确定性", " AIS 拥挤度 & 拥堵"]
     )
 
     with tab_cost:
@@ -1896,7 +1896,7 @@ def render() -> None:
         else:
             st.info("当前成本构建未启用 AIS 成本（权重为 0 或缺少 AIS 数据）。")
 
-    st.subheader("📥 导出当前规划结果")
+    st.subheader(" 导出当前规划结果")
     export_data = []
     for mode, route in routes_info.items():
         if route.reachable:
@@ -1923,7 +1923,7 @@ def render() -> None:
         df_export = pd.DataFrame(export_data)
         csv_bytes = df_export.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="📥 下载当前规划结果 (CSV)",
+            label=" 下载当前规划结果 (CSV)",
             data=csv_bytes,
             file_name=f"{selected_scenario_name}_{selected_edl_mode}_results.csv",
             mime="text/csv",
@@ -1931,7 +1931,7 @@ def render() -> None:
         )
 
         # === UX-3：一键导出当前规划报告（Markdown） ===
-        st.subheader("🧾 导出本次规划报告 (Markdown)")
+        st.subheader(" 导出本次规划报告 (Markdown)")
 
         def _get_costs_for_row(mode_key: str, route_obj: RouteInfo):
             b = _get_breakdown_for_route(mode_key, route_obj)
@@ -2099,7 +2099,7 @@ def render() -> None:
     else:
         st.warning("当前无可导出的结果。")
 
-    eval_tab, = st.tabs(["📑 EDL 评估结果"]) 
+    eval_tab, = st.tabs([" EDL 评估结果"]) 
     with eval_tab:
         try:
             from arcticroute.ui import eval_results as eval_ui_results
@@ -2119,7 +2119,7 @@ def render() -> None:
         except Exception as e:
             st.warning(f"评估结果展示失败：{e}")
 
-    results_tab, = st.tabs(["📊 方案对比"])
+    results_tab, = st.tabs([" 方案对比"])
     with results_tab:
         st.caption("展示当前场景三条方案的距离 / 成本 / 风险对比，地图与 KPI 卡片位于上方，可使用上方单选转换高亮方案。")
 
@@ -2165,7 +2165,7 @@ def render() -> None:
         else:
             st.info("暂无可比较的方案，请先完成规划。")
 
-        if st.button("🗂 导出当前场景结果包（ZIP）"):
+        if st.button(" 导出当前场景结果包（ZIP）"):
             with st.spinner("正在生成结果包..."):
                 env_meta = {
                     "ym": st.session_state.get("ym"),
@@ -2417,7 +2417,7 @@ def render() -> None:
         
         summary_data.append({
             "方案": route_info.label,
-            "可达": "✓" if route_info.reachable else "✗",
+            "可达": "" if route_info.reachable else "",
             "路径点数": route_info.steps if route_info.steps is not None else "-",
             "粗略距离_km": (
                 f"{route_info.approx_length_km:.1f}"
@@ -2444,7 +2444,7 @@ def render() -> None:
     # ========================================================================
     # Step 4: 显示推荐路线和评分表
     # ========================================================================
-    st.subheader("🎯 路线推荐与评分")
+    st.subheader(" 路线推荐与评分")
     
     # 显示推荐路线
     recommended_label = None
@@ -2455,15 +2455,15 @@ def render() -> None:
             break
     
     if recommended_label:
-        st.success(f"✅ 当前偏好下推荐路线：**{recommended_label}**（综合评分最低）")
+        st.success(f" 当前偏好下推荐路线：**{recommended_label}**（综合评分最低）")
         
         # 根据推荐路线给出提示
         if recommended_key == "edl_robust":
-            st.info("💡 EDL-Robust 方案更保守，更规避高不确定性区域，适合风险厌恶型用户。")
+            st.info(" EDL-Robust 方案更保守，更规避高不确定性区域，适合风险厌恶型用户。")
         elif recommended_key == "edl_safe":
-            st.info("💡 EDL-Safe 方案平衡风险和燃油，适合综合考虑的用户。")
+            st.info(" EDL-Safe 方案平衡风险和燃油，适合综合考虑的用户。")
         elif recommended_key == "efficient":
-            st.info("💡 Efficient 方案偏向燃油经济性，适合成本敏感型用户。")
+            st.info(" Efficient 方案偏向燃油经济性，适合成本敏感型用户。")
     
     # 构造评分表
     st.write("**各方案综合评分对比**")
@@ -2600,7 +2600,7 @@ def render() -> None:
         for _, row in df_comparison.iterrows():
             if row["EDL不确定性"] > 0.5:
                 st.warning(
-                    f"⚠️ {row['方案']} 在 EDL 不确定性成本上较高（{row['EDL不确定性']:.2f}），"
+                    f" {row['方案']} 在 EDL 不确定性成本上较高（{row['EDL不确定性']:.2f}），"
                     f"建议与其它方案对比权衡。"
                 )
     
@@ -2638,13 +2638,13 @@ def render() -> None:
         "base_distance": "基础距离成本",
         "ice_risk": "冰风险",
         "wave_risk": "波浪风险",
-        "ice_class_soft": "⚠️ 冰级软约束",
-        "ice_class_hard": "🚫 冰级硬限制",
-        "edl_risk": "🧠 EDL 风险",
-        "edl_uncertainty_penalty": "❓ EDL 不确定性",
-        "ais_density": "🚢 AIS 拥挤度 (deprecated)",
-        "ais_corridor": "🧭 AIS 主航线偏好（corridor）",
-        "ais_congestion": "🚦 AIS 拥挤惩罚（congestion）",
+        "ice_class_soft": " 冰级软约束",
+        "ice_class_hard": " 冰级硬限制",
+        "edl_risk": " EDL 风险",
+        "edl_uncertainty_penalty": " EDL 不确定性",
+        "ais_density": " AIS 拥挤度 (deprecated)",
+        "ais_corridor": " AIS 主航线偏好（corridor）",
+        "ais_congestion": " AIS 拥挤惩罚（congestion）",
     }
     
     # 成本分解展示（重点看 edl_safe 方案）
@@ -2692,9 +2692,9 @@ def render() -> None:
                     
                     # 为冰级组件添加特殊标记
                     if comp_name == "ice_class_hard":
-                        comp_label = f"🚫 {comp_label}"
+                        comp_label = f" {comp_label}"
                     elif comp_name == "ice_class_soft":
-                        comp_label = f"⚠️ {comp_label}"
+                        comp_label = f" {comp_label}"
                     elif comp_name == "edl_risk":
                         # 添加 EDL 来源标记
                         edl_source = cost_field.components.get("edl_risk_source", "unknown")
@@ -2703,13 +2703,13 @@ def render() -> None:
                         
                         # 根据来源添加标签
                         if edl_source == "miles-guess":
-                            comp_label = f"🧠 {comp_label} [miles-guess]"
+                            comp_label = f" {comp_label} [miles-guess]"
                         elif edl_source == "pytorch":
-                            comp_label = f"🧠 {comp_label} [PyTorch]"
+                            comp_label = f" {comp_label} [PyTorch]"
                         else:
-                            comp_label = f"🧠 {comp_label}"
+                            comp_label = f" {comp_label}"
                     elif comp_name == "ais_density":
-                        # AIS 标签已经包含 🚢 emoji，这里保持原样
+                        # AIS 标签已经包含  emoji，这里保持原样
                         pass
                     
                     breakdown_data.append({
@@ -2768,7 +2768,7 @@ def render() -> None:
                         # 如果 EDL 风险占比 < 5%，显示提示
                         if edl_risk_fraction < 0.05:
                             st.info(
-                                f"💡 **EDL 风险贡献很小**（占比 {edl_risk_fraction*100:.1f}%）。"
+                                f" **EDL 风险贡献很小**（占比 {edl_risk_fraction*100:.1f}%）。"
                                 f"这可能表示：\n"
                                 f"1. 当前区域本身环境风险不高（海冰、波浪等较少）\n"
                                 f"2. EDL 模型在该区域的预测不敏感\n"
@@ -2778,7 +2778,7 @@ def render() -> None:
                 # 如果有冰级硬约束被触发，显示警告
                 if "ice_class_hard" in breakdown.component_totals and breakdown.component_totals["ice_class_hard"] > 0:
                     st.warning(
-                        f"⚠️ 警告：该路线经过了冰厚超过船舶能力的区域（硬禁区）。"
+                        f" 警告：该路线经过了冰厚超过船舶能力的区域（硬禁区）。"
                         f"当前船舶最大安全冰厚约 {selected_vessel.get_effective_max_ice_thickness():.2f}m。"
                     )
                 
@@ -2838,7 +2838,7 @@ def render() -> None:
                         st.caption(f"路线中不确定性 > 0.7 的路段比例约为 {frac_high*100:.1f}%")
                         
                         if frac_high > 0.3:
-                            st.warning("⚠️ EDL 不确定性较高，建议结合物理风险和人工判断谨慎使用。")
+                            st.warning(" EDL 不确定性较高，建议结合物理风险和人工判断谨慎使用。")
                 else:
                     st.info("已启用 EDL，但当前未能获得有效的不确定性剖面（可能是模型或数据未提供 uncertainty）。")
     
@@ -2887,7 +2887,7 @@ def render() -> None:
         with st.session_state.pipeline_flow_placeholder.container():
             render_pipeline_flow(
                 st.session_state.pipeline_flow_nodes,
-                title="🔄 规划流程管线 ✅ 完成",
+                title=" 规划流程管线  完成",
                 expanded=False,  # 完成后自动折叠
             )
     
@@ -2903,7 +2903,7 @@ def render() -> None:
     # 规划完成后自动折叠 pipeline
     st.session_state['pipeline_expanded'] = False
     st.rerun()
-    st.subheader("📥 导出当前规划结果")
+    st.subheader(" 导出当前规划结果")
     
     # 为每个可达的路线生成导出数据
     export_data = []
@@ -2944,7 +2944,7 @@ def render() -> None:
         # CSV 导出
         csv_bytes = df_export.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="📥 下载当前规划结果 (CSV)",
+            label=" 下载当前规划结果 (CSV)",
             data=csv_bytes,
             file_name=f"{selected_scenario_name}_{selected_edl_mode}_results.csv",
             mime="text/csv",
@@ -2976,16 +2976,16 @@ def render() -> None:
         ).encode("utf-8")
         
         st.download_button(
-            label="📥 下载当前规划结果 (JSON)",
+            label=" 下载当前规划结果 (JSON)",
             data=json_data,
             file_name=f"{selected_scenario_name}_{selected_edl_mode}_results.json",
             mime="application/json",
             key="download_json",
         )
         
-        st.caption("✓ 导出数据包含所有可达方案的规划结果，包括距离、成本分量等详细信息。")
+        st.caption(" 导出数据包含所有可达方案的规划结果，包括距离、成本分量等详细信息。")
     else:
-        st.warning("⚠️ 当前无可达方案，无法导出结果。")
+        st.warning(" 当前无可达方案，无法导出结果。")
 
     # 批量评测结果
     results_tab, = st.tabs(["批量测试结果"])

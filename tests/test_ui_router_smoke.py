@@ -32,6 +32,7 @@ def test_router_constants():
         PAGE_PLANNER,
         PAGE_DATA,
         PAGE_RULES,
+        PAGE_DOCTOR,
         PAGE_ABOUT,
         ALL_PAGES,
     )
@@ -41,10 +42,11 @@ def test_router_constants():
     assert PAGE_PLANNER is not None
     assert PAGE_DATA is not None
     assert PAGE_RULES is not None
+    assert PAGE_DOCTOR is not None
     assert PAGE_ABOUT is not None
     
     # 确保 ALL_PAGES 包含所有页面
-    assert len(ALL_PAGES) == 5
+    assert len(ALL_PAGES) == 6
     assert PAGE_COVER in ALL_PAGES
     assert PAGE_PLANNER in ALL_PAGES
     assert PAGE_DATA in ALL_PAGES

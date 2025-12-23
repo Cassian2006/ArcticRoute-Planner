@@ -76,10 +76,10 @@ def render_pipeline(stages: List[PipelineStage], container) -> None:
     with container.container():
         # 状态图标映射
         status_icons = {
-            "pending": "⚪",
-            "running": "🟡",
-            "done": "🟢",
-            "fail": "🔴"
+            "pending": "",
+            "running": "",
+            "done": "",
+            "fail": ""
         }
         
         # 计算列数：每个节点 1 列 + 每两个节点间的箭头 1 列
@@ -94,7 +94,7 @@ def render_pipeline(stages: List[PipelineStage], container) -> None:
         for stage_idx, stage in enumerate(stages):
             # 渲染节点
             with cols[col_idx]:
-                icon = status_icons.get(stage.status, "❓")
+                icon = status_icons.get(stage.status, "")
                 st.markdown(f"<div style='text-align: center;'>{icon}</div>", unsafe_allow_html=True)
                 st.markdown(f"<div style='text-align: center; font-size: 0.85em; font-weight: bold;'>{stage.label}</div>", unsafe_allow_html=True)
                 
@@ -114,7 +114,7 @@ def render_pipeline(stages: List[PipelineStage], container) -> None:
                 
                 # 显示失败原因
                 if stage.fail_reason:
-                    st.markdown(f"<div style='text-align: center; font-size: 0.7em; color: red;'>❌ {stage.fail_reason}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='text-align: center; font-size: 0.7em; color: red;'> {stage.fail_reason}</div>", unsafe_allow_html=True)
             
             col_idx += 1
             

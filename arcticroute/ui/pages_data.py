@@ -139,17 +139,17 @@ def scan_static_assets() -> dict:
 def render_data() -> None:
     """渲染数据页"""
     
-    st.title("🛰️ 数据源状态")
+    st.title(" 数据源状态")
     st.caption("查看环境数据和静态资产的加载状态")
     
     # ========== CMEMS 环境数据 ==========
-    st.subheader("🌊 CMEMS 环境数据定位")
+    st.subheader(" CMEMS 环境数据定位")
     
     # 数据定位按钮
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        if st.button("🔄 重新扫描 CMEMS 数据", use_container_width=True):
+        if st.button(" 重新扫描 CMEMS 数据", use_container_width=True):
             st.toast("开始同步 CMEMS 缓存并重新扫描...")
             clear_discovery_caches()
             st.cache_data.clear()
@@ -159,21 +159,21 @@ def render_data() -> None:
             st.rerun()
     
     with col2:
-        if st.button("🗑️ 清理所有缓存", use_container_width=True):
+        if st.button(" 清理所有缓存", use_container_width=True):
             clear_discovery_caches()
             # 清理 Streamlit 缓存
             st.cache_data.clear()
             st.toast("所有缓存已清理")
-            st.success("✓ 缓存已清理")
+            st.success(" 缓存已清理")
 
     if "cmems_sync_result" in st.session_state:
         sync_result = st.session_state.pop("cmems_sync_result")
         if sync_result.get("exit_code") == 0:
-            st.success("✅ CMEMS 同步完成，状态已更新")
+            st.success(" CMEMS 同步完成，状态已更新")
             st.toast("CMEMS 同步完成")
         else:
             error_msg = sync_result.get("error", sync_result.get("stderr", "Unknown error"))
-            st.error(f"❌ CMEMS 同步失败：{error_msg}")
+            st.error(f" CMEMS 同步失败：{error_msg}")
     
     # 运行数据发现
     with st.spinner("正在扫描 CMEMS 数据..."):
@@ -201,9 +201,9 @@ def render_data() -> None:
     
     with col3:
         if summary['found_count'] == summary['total_count']:
-            st.metric("状态", "✓ 完整", delta="所有层已就绪")
+            st.metric("状态", " 完整", delta="所有层已就绪")
         else:
-            st.metric("状态", "⚠ 不完整", delta=f"缺少 {summary['missing_count']} 层")
+            st.metric("状态", " 不完整", delta=f"缺少 {summary['missing_count']} 层")
     
     # 详细状态表格
     st.markdown("#### 数据层详情")
@@ -213,7 +213,7 @@ def render_data() -> None:
     for layer_name, layer_info in layers.items():
         table_data.append({
             "层": layer_name.upper(),
-            "状态": "✓ 找到" if layer_info.found else "✗ 缺失",
+            "状态": " 找到" if layer_info.found else " 缺失",
             "来源": layer_info.source,
             "路径": layer_info.path if layer_info.path else "—",
             "大小": f"{layer_info.size_mb:.1f} MB" if layer_info.size_mb else "—",
@@ -223,7 +223,7 @@ def render_data() -> None:
     st.dataframe(table_data, use_container_width=True, hide_index=True)
     
     # 搜索目录说明
-    with st.expander("📂 搜索目录说明", expanded=False):
+    with st.expander(" 搜索目录说明", expanded=False):
         search_dirs = DEFAULT_NEWENV_DIRS + DEFAULT_CACHE_DIRS
         st.markdown(
             f"""
@@ -371,7 +371,7 @@ def render_data() -> None:
     st.markdown("---")
     
     # ========== 静态资产 ==========
-    st.subheader("🗺️ 静态资产检查")
+    st.subheader(" 静态资产检查")
     
     # Manifest 路径
     manifest_path = get_manifest_path()
@@ -389,14 +389,14 @@ def render_data() -> None:
     
     with col2:
         if manifest_path.exists():
-            st.markdown('<span class="status-badge active">✓ 存在</span>', unsafe_allow_html=True)
+            st.markdown('<span class="status-badge active"> 存在</span>', unsafe_allow_html=True)
         else:
-            st.markdown('<span class="status-badge inactive">✗ 缺失</span>', unsafe_allow_html=True)
+            st.markdown('<span class="status-badge inactive"> 缺失</span>', unsafe_allow_html=True)
     
     st.caption(f"环境变量 ARCTICROUTE_MANIFEST: {manifest_env}")
     
     # 重新扫描按钮
-    if st.button("🔄 运行 Static Assets Doctor", use_container_width=True, type="primary"):
+    if st.button(" 运行 Static Assets Doctor", use_container_width=True, type="primary"):
         with st.spinner("正在扫描静态资产..."):
             scan_result = run_static_assets_doctor()
             
@@ -409,11 +409,11 @@ def render_data() -> None:
                 missing_req = len(report.get("missing_required", []))
                 missing_opt = len(report.get("missing_optional", []))
                 
-                st.success(f"✓ 扫描完成：missing_required={missing_req}, missing_optional={missing_opt}")
+                st.success(f" 扫描完成：missing_required={missing_req}, missing_optional={missing_opt}")
                 st.toast("Static assets doctor: done")
             else:
                 error_msg = scan_result.get("error", scan_result.get("stderr", "Unknown error"))
-                st.error(f"❌ 扫描失败：exit_code={scan_result['exit_code']}")
+                st.error(f" 扫描失败：exit_code={scan_result['exit_code']}")
                 st.error(f"错误信息：{error_msg}")
             
             st.rerun()
@@ -450,12 +450,12 @@ def render_data() -> None:
             report = last_scan["report"]
             
             if report.get("missing_required"):
-                with st.expander("❌ 缺失的必需资产", expanded=True):
+                with st.expander(" 缺失的必需资产", expanded=True):
                     for asset in report["missing_required"]:
                         st.text(f"- {asset}")
             
             if report.get("missing_optional"):
-                with st.expander("⚠️ 缺失的可选资产", expanded=False):
+                with st.expander(" 缺失的可选资产", expanded=False):
                     for asset in report["missing_optional"]:
                         st.text(f"- {asset}")
     else:
@@ -485,7 +485,7 @@ def render_data() -> None:
                 all_ok = doctor_report.get("all_ok", False)
                 st.metric(
                     "整体状态",
-                    "✓ 正常" if all_ok else "⚠ 警告",
+                    " 正常" if all_ok else " 警告",
                 )
         else:
             st.info("点击上方按钮运行 Doctor 检查")

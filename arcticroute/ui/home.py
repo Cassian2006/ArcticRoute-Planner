@@ -125,7 +125,7 @@ def render() -> None:
         st.markdown(
             """
             <div class="ar-card">
-                <h3 class="feature-card-title">🔍 多模态成本</h3>
+                <h3 class="feature-card-title"> 多模态成本</h3>
                 <p class="feature-card-subtitle">海冰 + 海浪 + AIS 拥挤度 + 冰级约束</p>
             </div>
             """,
@@ -135,7 +135,7 @@ def render() -> None:
         st.markdown(
             """
             <div class="ar-card">
-                <h3 class="feature-card-title">🧠 EDL 风险与不确定性</h3>
+                <h3 class="feature-card-title"> EDL 风险与不确定性</h3>
                 <p class="feature-card-subtitle">miles-guess / PyTorch · 风险 + 不确定性评估</p>
             </div>
             """,
@@ -145,7 +145,7 @@ def render() -> None:
         st.markdown(
             """
             <div class="ar-card">
-                <h3 class="feature-card-title">🧭 智能航线规划</h3>
+                <h3 class="feature-card-title"> 智能航线规划</h3>
                 <p class="feature-card-subtitle">三种策略：效率优先 / 风险均衡 / 稳健安全</p>
             </div>
             """,
@@ -157,5 +157,5 @@ def render() -> None:
     with cta_container:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("🚀 进入航线规划驾驶舱", use_container_width=True):
+            if st.button(" 进入航线规划驾驶舱", use_container_width=True):
                 st.session_state["active_page"] = "planner"

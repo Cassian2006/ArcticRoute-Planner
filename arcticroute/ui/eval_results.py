@@ -94,7 +94,7 @@ def generate_conclusion_text(summary: dict) -> str:
         return "暂无评估数据。"
     
     lines = []
-    lines.append("## 📊 评估结论\n")
+    lines.append("##  评估结论\n")
     
     # EDL-Safe 结论
     if "edl_safe" in summary:
@@ -117,12 +117,12 @@ def generate_conclusion_text(summary: dict) -> str:
         # 生成定性评价
         if safe_stats['avg_risk_reduction'] > 50:
             lines.append(
-                "\n💡 **评价**: EDL-Safe 方案在风险下降和距离增加之间取得良好平衡，"
+                "\n **评价**: EDL-Safe 方案在风险下降和距离增加之间取得良好平衡，"
                 "适合追求安全性与经济性兼顾的用户。"
             )
         else:
             lines.append(
-                "\n💡 **评价**: EDL-Safe 方案提供了适度的风险下降，"
+                "\n **评价**: EDL-Safe 方案提供了适度的风险下降，"
                 "但距离增加较为明显，适合风险敏感型用户。"
             )
         
@@ -149,12 +149,12 @@ def generate_conclusion_text(summary: dict) -> str:
         # 生成定性评价
         if robust_stats['avg_risk_reduction'] > 75:
             lines.append(
-                "\n💡 **评价**: EDL-Robust 方案提供了显著的风险下降，"
+                "\n **评价**: EDL-Robust 方案提供了显著的风险下降，"
                 "虽然距离增加较多，但对于高风险厌恶型用户或关键航线非常有价值。"
             )
         else:
             lines.append(
-                "\n💡 **评价**: EDL-Robust 方案在风险下降上表现中等，"
+                "\n **评价**: EDL-Robust 方案在风险下降上表现中等，"
                 "距离增加代价较大，建议结合具体场景选择使用。"
             )
         
@@ -165,7 +165,7 @@ def generate_conclusion_text(summary: dict) -> str:
         safe_stats = summary["edl_safe"]
         robust_stats = summary["edl_robust"]
         
-        lines.append("### 🎯 整体建议")
+        lines.append("###  整体建议")
         
         if safe_stats['avg_risk_reduction'] > 50 and safe_stats['avg_distance_increase'] < 5:
             lines.append(
@@ -191,7 +191,7 @@ def render_scenario_table(df: pd.DataFrame) -> None:
     Args:
         df: 评估结果 DataFrame
     """
-    st.subheader("📋 场景对比详情")
+    st.subheader(" 场景对比详情")
     
     # 按 scenario_id 分组显示
     scenarios = sorted(df["scenario_id"].unique())
@@ -199,7 +199,7 @@ def render_scenario_table(df: pd.DataFrame) -> None:
     for scenario_id in scenarios:
         scen_df = df[df["scenario_id"] == scenario_id]
         
-        with st.expander(f"📍 {scenario_id}", expanded=False):
+        with st.expander(f" {scenario_id}", expanded=False):
             # 构建表格数据
             table_data = []
             for _, row in scen_df.iterrows():
@@ -227,7 +227,7 @@ def render_scatter_plot(df: pd.DataFrame) -> None:
     Args:
         df: 评估结果 DataFrame
     """
-    st.subheader("📈 距离增加 vs 风险下降")
+    st.subheader(" 距离增加 vs 风险下降")
     
     # 过滤有效数据
     valid_df = df[pd.notna(df["risk_reduction_pct"])].copy()
@@ -281,7 +281,7 @@ def render_scatter_plot(df: pd.DataFrame) -> None:
         
         # 添加参考线（Pareto 前沿）
         st.caption(
-            "💡 **图表解读**: 左上角为最优（低距离增加、高风险下降）；"
+            " **图表解读**: 左上角为最优（低距离增加、高风险下降）；"
             "右下角为次优（高距离增加、低风险下降）。"
         )
         
@@ -302,7 +302,7 @@ def render_summary_stats(summary: dict) -> None:
     Args:
         summary: 全局总结字典
     """
-    st.subheader("📊 全局统计")
+    st.subheader(" 全局统计")
     
     if not summary:
         st.info("暂无评估数据。")
@@ -350,7 +350,7 @@ def render() -> None:
     """
     渲染评估结果页面。
     """
-    st.title("🔬 EDL 评估结果")
+    st.title(" EDL 评估结果")
     st.caption("基于 eval_scenario_results 的多场景对比分析")
     
     # 加载数据
@@ -358,7 +358,7 @@ def render() -> None:
     
     if df is None:
         st.warning(
-            "⚠️ 评估结果文件不存在。\n\n"
+            " 评估结果文件不存在。\n\n"
             "请先运行：\n"
             "```bash\n"
             "python -m scripts.run_scenario_suite\n"
@@ -371,7 +371,7 @@ def render() -> None:
     summary = generate_global_summary(df)
     
     # 创建三个 Tab
-    tab1, tab2, tab3 = st.tabs(["📋 详细数据", "📈 可视化分析", "📝 结论总结"])
+    tab1, tab2, tab3 = st.tabs([" 详细数据", " 可视化分析", " 结论总结"])
     
     with tab1:
         render_scenario_table(df)
@@ -390,7 +390,7 @@ def render() -> None:
         st.markdown(conclusion_text)
         
         # 添加数据导出功能
-        st.subheader("📥 导出数据")
+        st.subheader(" 导出数据")
         
         csv_bytes = df.to_csv(index=False).encode("utf-8")
         st.download_button(

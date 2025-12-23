@@ -10,7 +10,7 @@ import streamlit as st
 def render_about() -> None:
     """渲染关于页"""
     
-    st.title("ℹ️ 关于 ArcticRoute")
+    st.title("ℹ 关于 ArcticRoute")
     
     st.markdown("""
     ## 北极航线智能规划系统
@@ -19,11 +19,11 @@ def render_about() -> None:
     
     ### 核心特性
     
-    - 🧊 **多模态成本场**: 整合海冰、波浪、AIS、冰级等多源数据
-    - 🧠 **EDL 风险评估**: 基于 Evidential Deep Learning 的不确定性感知风险评估
-    - 🛤️ **智能路径规划**: A* 算法 + PolarRoute 框架
-    - 📊 **可视化分析**: 交互式地图和成本分解图表
-    - ⚙️ **规则约束**: Polar Code + POLARIS 风险评估系统
+    -  **多模态成本场**: 整合海冰、波浪、AIS、冰级等多源数据
+    -  **EDL 风险评估**: 基于 Evidential Deep Learning 的不确定性感知风险评估
+    -  **智能路径规划**: A* 算法 + PolarRoute 框架
+    -  **可视化分析**: 交互式地图和成本分解图表
+    -  **规则约束**: Polar Code + POLARIS 风险评估系统
     
     ### 技术栈
     
@@ -74,8 +74,8 @@ def render_about() -> None:
     ### 联系方式
     
     -[object Object].email@example.com
-    - 🐙 GitHub: https://github.com/yourusername/arcticroute
-    - 📝 文档: https://arcticroute.readthedocs.io
+    -  GitHub: https://github.com/yourusername/arcticroute
+    -  文档: https://arcticroute.readthedocs.io
     
     ---
     

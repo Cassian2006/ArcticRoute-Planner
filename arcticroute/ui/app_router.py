@@ -15,10 +15,11 @@ PAGE_COVER = "封面"
 PAGE_PLANNER = "规划"
 PAGE_DATA = "数据"
 PAGE_RULES = "规则诊断"
+PAGE_DOCTOR = "体检"
 PAGE_ABOUT = "关于"
 
 # 所有页面列表（顺序很重要）
-ALL_PAGES = [PAGE_COVER, PAGE_PLANNER, PAGE_DATA, PAGE_RULES, PAGE_ABOUT]
+ALL_PAGES = [PAGE_COVER, PAGE_PLANNER, PAGE_DATA, PAGE_RULES, PAGE_DOCTOR, PAGE_ABOUT]
 
 
 def get_current_page() -> str:
@@ -38,6 +39,7 @@ def get_current_page() -> str:
             "planner": PAGE_PLANNER,
             "data": PAGE_DATA,
             "rules": PAGE_RULES,
+            "doctor": PAGE_DOCTOR,
             "about": PAGE_ABOUT,
         }
         if page_param in page_mapping:
@@ -73,6 +75,7 @@ def set_current_page(page: str) -> None:
         PAGE_PLANNER: "planner",
         PAGE_DATA: "data",
         PAGE_RULES: "rules",
+        PAGE_DOCTOR: "doctor",
         PAGE_ABOUT: "about",
     }
     if page in page_mapping:

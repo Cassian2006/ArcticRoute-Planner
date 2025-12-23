@@ -21,7 +21,7 @@ def inject_shell_css() -> None:
     shell_html_path = assets_dir / "arctic_ui_shell.html"
     
     if not shell_html_path.exists():
-        st.warning(f"⚠️ UI 壳子文件不存在: {shell_html_path}")
+        st.warning(f" UI 壳子文件不存在: {shell_html_path}")
         return
     
     try:
@@ -41,10 +41,10 @@ def inject_shell_css() -> None:
                 unsafe_allow_html=True
             )
         else:
-            st.warning("⚠️ 未在 arctic_ui_shell.html 中找到 <style> 标签")
+            st.warning(" 未在 arctic_ui_shell.html 中找到 <style> 标签")
             
     except Exception as e:
-        st.error(f"❌ 加载 UI 壳子失败: {e}")
+        st.error(f" 加载 UI 壳子失败: {e}")
 
 
 def inject_custom_css() -> None:

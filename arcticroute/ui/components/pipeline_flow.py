@@ -162,13 +162,13 @@ def _status_text(n: PipeNode) -> str:
     if n.status == "pending":
         return "⏳ 等待"
     if n.status == "running":
-        return "🚧 运行中"
+        return " 运行中"
     if n.status == "done":
         if n.seconds is None:
-            return "✅ 完成"
-        return f"✅ 完成 · {n.seconds:.2f}s"
+            return " 完成"
+        return f" 完成 · {n.seconds:.2f}s"
     if n.status == "fail":
-        return "❌ 失败"
+        return " 失败"
     return n.status
 
 

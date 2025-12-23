@@ -21,7 +21,7 @@ def render_cover() -> None:
                         ArcticRoute Mission Control
                     </div>
                     <h1 style="margin:0.3rem 0 0.6rem 0; font-size:2.4rem; color:var(--text-primary, #f9fafb);">
-                        🧊 北极航线智能规划
+                         北极航线智能规划
                     </h1>
                     <p style="margin:0; max-width:640px; color:var(--text-muted, #9fb2c0); line-height:1.6;">
                         多源海冰与波浪情报叠加，快速生成安全/效率/稳健三种航线。
@@ -39,8 +39,8 @@ def render_cover() -> None:
     
     with col2:
         # 使用路由器的按钮创建函数
-        create_page_button("进入规划", PAGE_PLANNER, "🧭")
-        create_page_button("打开数据页", PAGE_DATA, "🛰️")
+        create_page_button("进入规划", PAGE_PLANNER)
+        create_page_button("打开数据页", PAGE_DATA)
     
     # 项目亮点
     st.markdown("---")
@@ -65,7 +65,7 @@ def render_cover() -> None:
         st.markdown(
             """
             <div class="card">
-                <h4 style="color:var(--text-primary, #f9fafb); margin-top:0;">🧠 EDL 风险评估</h4>
+                <h4 style="color:var(--text-primary, #f9fafb); margin-top:0;"> EDL 风险评估</h4>
                 <p style="color:var(--text-secondary, #e5e7eb); font-size:0.9rem; line-height:1.5;">
                     miles-guess / PyTorch 模型 · 风险 + 不确定性双重评估
                 </p>
@@ -78,7 +78,7 @@ def render_cover() -> None:
         st.markdown(
             """
             <div class="card">
-                <h4 style="color:var(--text-primary, #f9fafb); margin-top:0;">🧭 智能规划</h4>
+                <h4 style="color:var(--text-primary, #f9fafb); margin-top:0;"> 智能规划</h4>
                 <p style="color:var(--text-secondary, #e5e7eb); font-size:0.9rem; line-height:1.5;">
                     三种策略：效率优先 / 风险均衡 / 稳健安全
                 </p>
@@ -96,19 +96,19 @@ def render_cover() -> None:
     with col1:
         st.markdown("""
         **环境数据**
-        - 🧊 海冰浓度 (SIC): Copernicus CMEMS
-        - 🧊 海冰厚度 (SIT): CMEMS
-        - 🌊 有效波高 (SWH): CMEMS
-        - 🌊 海冰漂移: CMEMS
+        -  海冰浓度 (SIC): Copernicus CMEMS
+        -  海冰厚度 (SIT): CMEMS
+        -  有效波高 (SWH): CMEMS
+        -  海冰漂移: CMEMS
         """)
     
     with col2:
         st.markdown("""
         **静态资产**
-        - 🚢 AIS 拥挤度: 历史航迹密度
-        - 🛤️ 主航道走廊: 高斯核密度估计
-        - 🏔️ 浅水区: 水深数据
-        - ⚓ 港口: 全球港口数据库
+        -  AIS 拥挤度: 历史航迹密度
+        -  主航道走廊: 高斯核密度估计
+        -  浅水区: 水深数据
+        -  港口: 全球港口数据库
         """)
     
     # 版本信息
