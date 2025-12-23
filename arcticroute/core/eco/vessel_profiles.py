@@ -346,6 +346,9 @@ def get_profile_catalog() -> Dict[str, VesselProfile]:
         except Exception:
             pass
 
+    # 确保默认三项也在全量目录中，便于 UI 置顶与兼容测试
+    catalog.update(get_default_profiles())
+
     return catalog
 
 

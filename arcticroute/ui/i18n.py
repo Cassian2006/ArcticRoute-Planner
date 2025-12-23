@@ -58,99 +58,107 @@ def tr(key: str, lang: str | None = None) -> str:
 
 
 def render_lang_toggle() -> str:
-    """侧边栏语言切换控件。返回当前语言代码。"""
-    current = st.session_state.get("lang", DEFAULT_LANG)
-    idx = SUPPORTED_LANGS.index(current) if current in SUPPORTED_LANGS else 0
-    label = tr("lang_label", lang=current)
-    choice = st.selectbox(label, SUPPORTED_LANGS, index=idx)
-    st.session_state["lang"] = choice
-    return choice
-
-from __future__ import annotations
-import streamlit as st
-
-_LANGS = ("zh", "en")
-
-# 最小可交付：先覆盖导航、首页/驾驶舱/数据/诊断、planner mode、常用按钮
-_DICT: dict[str, dict[str, str]] = {
-    "en": {
-        "app_title": "ArcticRoute",
-        "nav": "Navigation",
-        "home": "Home",
-        "planner": "Planner Cockpit",
-        "data": "Data",
-        "diag": "Diagnostics",
-        "lang": "Language",
-        "lang_zh": "中文",
-        "lang_en": "English",
-
-        "planner_engine": "Planner engine",
-        "mode_auto": "Auto (best available)",
-        "mode_astar": "A* (always available)",
-        "mode_pipe": "PolarRoute (pipeline dir)",
-        "mode_ext": "PolarRoute (external mesh/config)",
-        "availability": "Availability",
-        "fallback_reason": "Fallback reason",
-        "pipeline_dir": "Pipeline directory",
-        "mesh_path": "External vessel_mesh.json",
-        "routecfg_path": "External route_config.json",
-        "apply": "Apply",
-    },
-    "zh": {
-        "app_title": "ArcticRoute",
-        "nav": "导航",
-        "home": "首页",
-        "planner": "航线规划驾驶舱",
-        "data": "数据",
-        "diag": "诊断",
-        "lang": "语言",
-        "lang_zh": "中文",
-        "lang_en": "English",
-
-        "planner_engine": "规划内核",
-        "mode_auto": "自动（优先可用）",
-        "mode_astar": "A*（始终可用）",
-        "mode_pipe": "PolarRoute（pipeline 目录）",
-        "mode_ext": "PolarRoute（外部 mesh/config）",
-        "availability": "可用性",
-        "fallback_reason": "回退原因",
-        "pipeline_dir": "Pipeline 目录",
-        "mesh_path": "外部 vessel_mesh.json",
-        "routecfg_path": "外部 route_config.json",
-        "apply": "应用",
-    },
-}
-
-def get_lang() -> str:
+    """侧边栏语言切换：使用自定义装饰单选，支持 query param 同步。"""
+    qp_lang = None
     try:
-        lang = st.session_state.get("lang", None)
-        if lang in _LANGS:
-            return lang
-        # 默认中文（你是中文 UI）
-        st.session_state["lang"] = "zh"
-        return "zh"
-    except (RuntimeError, AttributeError):
-        # 不在 streamlit runtime 中，返回默认语言
-        return "zh"
+        qp_lang = st.query_params.get("lang")
+    except Exception:
+        qp_lang = None
 
-def set_lang(lang: str) -> None:
-    if lang in _LANGS:
-        st.session_state["lang"] = lang
+    current = st.session_state.get("lang", DEFAULT_LANG)
+    if qp_lang in SUPPORTED_LANGS:
+        current = qp_lang
 
-def t(key: str) -> str:
-    lang = get_lang()
-    return _DICT.get(lang, {}).get(key, _DICT["en"].get(key, key))
+    # 记录回 session_state
+    st.session_state["lang"] = current if current in SUPPORTED_LANGS else DEFAULT_LANG
+    label = tr("lang_label", lang=current)
 
-def render_lang_toggle() -> None:
-    lang = get_lang()
-    # 放在 sidebar 顶部即可
-    choice = st.selectbox(
-        t("lang"),
-        options=["zh", "en"],
-        format_func=lambda x: t("lang_zh") if x == "zh" else t("lang_en"),
-        index=0 if lang == "zh" else 1,
+    # 生成隐藏字段以保留其他 query（如 page）
+    hidden_inputs = []
+    try:
+        for k, v in st.query_params.items():
+            if k == "lang":
+                continue
+            hidden_inputs.append(f'<input type="hidden" name="{k}" value="{v}">')
+    except Exception:
+        pass
+    hidden_html = "\n".join(hidden_inputs)
+
+    zh_checked = "checked" if current == "zh" else ""
+    en_checked = "checked" if current == "en" else ""
+
+    st.markdown(
+        f"""
+<style>
+/* lang toggle - Xtenso style */
+.filter-switch {{
+  border: 2px solid #ffc000;
+  border-radius: 30px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 50px;
+  width: 180px;
+  overflow: hidden;
+  background: #0f172a;
+}}
+.filter-switch input {{
+  display: none;
+}}
+.filter-switch label {{
+  flex: 1;
+  text-align: center;
+  cursor: pointer;
+  border: none;
+  border-radius: 30px;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+  transition: all 0.5s;
+  font-weight: 700;
+  font-size: 18px;
+  color: #7d7d7d;
+}}
+.filter-switch .background {{
+  position: absolute;
+  width: 49%;
+  height: 38px;
+  background-color: #ffc000;
+  top: 4px;
+  left: 4px;
+  border-radius: 30px;
+  transition: left 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}}
+#option-en:checked ~ .background {{
+  left: 50%;
+}}
+#option-zh:checked + label[for="option-zh"] {{
+  color: #0f172a;
+  font-weight: 800;
+}}
+#option-en:checked + label[for="option-en"] {{
+  color: #0f172a;
+  font-weight: 800;
+}}
+#option-zh:not(:checked) + label[for="option-zh"],
+#option-en:not(:checked) + label[for="option-en"] {{
+  color: #cbd5e1;
+}}
+</style>
+
+<div style="margin-bottom: 0.5rem; font-weight: 700; color: #f8fafc;">{label}</div>
+<form class="filter-switch" method="get" oninput="this.submit()">
+  {hidden_html}
+  <input id="option-zh" name="lang" type="radio" value="zh" {zh_checked}/>
+  <label class="option" for="option-zh">中文</label>
+  <input id="option-en" name="lang" type="radio" value="en" {en_checked}/>
+  <label class="option" for="option-en">English</label>
+  <span class="background"></span>
+</form>
+""",
+        unsafe_allow_html=True,
     )
-    if choice != lang:
-        set_lang(choice)
-        st.rerun()
+
+    # 表单提交后刷新，依据 query params 决定 current；此处直接返回 session 中值
+    return st.session_state.get("lang", DEFAULT_LANG)
 

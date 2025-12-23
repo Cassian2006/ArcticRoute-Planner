@@ -35,10 +35,14 @@ from arcticroute.core.cost import (
     discover_ais_density_candidates,
     compute_grid_signature,
 )
-from arcticroute.core.env_real import load_real_env_for_grid
+from arcticroute.core.env_real import load_real_env_for_grid, resolve_env_files_for_ym
 from arcticroute.core.astar import plan_route_latlon
 from arcticroute.core.analysis import compute_route_cost_breakdown, compute_route_profile
-from arcticroute.core.eco.vessel_profiles import get_default_profiles, VesselProfile
+from arcticroute.core.eco.vessel_profiles import (
+    get_default_profiles,
+    get_profile_catalog,
+    VesselProfile,
+)
 from arcticroute.core.eco.eco_model import estimate_route_eco
 
 # 导入共享配置
@@ -71,6 +75,25 @@ ROUTE_LABELS_ZH = {
     "efficient": "效率优先",
     "edl_safe": "风险均衡",
     "edl_robust": "稳健安全",
+}
+
+# 场景中文标签与说明
+SCENARIO_LABELS_ZH = {
+    "barents_to_chukchi_edl": "巴伦支海→楚科奇（EDL安全）",
+    "kara_short_efficient": "喀拉海内短航段（效率）",
+    "southern_route_safe": "南部北极带（安全）",
+    "west_to_east_demo": "西向东演示穿越",
+    "high_ais_density_case": "高 AIS 密度航线",
+    "high_uncertainty_case": "高不确定性 EDL 探查",
+}
+
+SCENARIO_DESCS_ZH = {
+    "barents_to_chukchi_edl": "沿俄罗斯北岸长距离，对比 EDL 安全与稳健。",
+    "kara_short_efficient": "喀拉海中尺度短跳，测试 AIS 密度与冰约束。",
+    "southern_route_safe": "低纬度带，避开重冰并保持适中航程。",
+    "west_to_east_demo": "高纬度演示穿越，用于验证 demo 网格。",
+    "high_ais_density_case": "高 AIS 密度航道，考察拥挤避让与航线偏好。",
+    "high_uncertainty_case": "沿冰缘的高不确定性探查，对比 EDL 风险与不确定性权重。",
 }
 
 # ============================================================================
@@ -133,6 +156,65 @@ def build_route_profiles_from_edl_modes() -> list[dict]:
 
 # 从共享配置构建 ROUTE_PROFILES
 ROUTE_PROFILES = build_route_profiles_from_edl_modes()
+
+
+def default_weights() -> dict[str, float]:
+    """返回 UI 成本权重的默认值（纯函数，便于测试复用）。"""
+    return {
+        "w_sic": 4.0,
+        "w_swh": 2.0,
+        "w_sit": 0.0,
+        "w_drift": 0.0,
+        "w_ais": 0.0,
+        "w_corridor": 2.0,
+        "w_congestion": 1.0,
+        "w_shallow": 0.0,
+        "w_polaris": 0.0,
+    }
+
+
+def _data_source_entry(found: bool, path: Path | str | None = None, shape=None, note: str | None = None) -> dict:
+    return {
+        "found": bool(found),
+        "path": str(path) if path is not None else None,
+        "shape": list(shape) if shape is not None and hasattr(shape, "__len__") else (shape if shape is None else [shape]),
+        "note": note,
+    }
+
+
+def summarize_data_sources(real_env, resolved_files, ais_density, ais_density_da, ais_density_path) -> dict:
+    """构建数据源可见性摘要，便于 UI 展示。"""
+    root = Path(__file__).resolve().parents[2]
+    static_dir = root / "data" / "static_assets"
+
+    def _first(path_list):
+        return path_list[0] if path_list else None
+
+    meta = {
+        "sic": _data_source_entry(
+            real_env is not None and getattr(real_env, "sic", None) is not None,
+            path=_first(resolved_files.sic_files) if resolved_files else None,
+            shape=None if real_env is None else getattr(getattr(real_env, "sic", None), "shape", None),
+        ),
+        "swh": _data_source_entry(
+            real_env is not None and getattr(real_env, "wave_swh", None) is not None,
+            path=_first(resolved_files.wave_files) if resolved_files else None,
+            shape=None if real_env is None else getattr(getattr(real_env, "wave_swh", None), "shape", None),
+        ),
+        "sit": _data_source_entry(False, note="暂未接入"),
+        "drift": _data_source_entry(False, note="暂未接入"),
+        "ais": _data_source_entry(
+            ais_density is not None or ais_density_da is not None or ais_density_path is not None,
+            path=(
+                str(ais_density_path)
+                if ais_density_path is not None
+                else ("auto" if (ais_density is not None or ais_density_da is not None) else None)
+            ),
+            shape=getattr(ais_density, "shape", None) or getattr(ais_density_da, "shape", None),
+        ),
+        "static_assets": _data_source_entry(static_dir.exists(), path=static_dir),
+    }
+    return meta
 
 
 @dataclass
@@ -311,6 +393,8 @@ def plan_three_routes(
     w_ais_corridor: float = 0.0,
     w_ais_congestion: float = 0.0,
     w_ais: float | None = None,
+    weights: dict[str, float] | None = None,
+    ym: str | None = None,
 ) -> tuple[dict[str, RouteInfo], dict, dict, dict, str]:
     """
     规划三条路线：efficient / edl_safe / edl_robust（使用 ROUTE_PROFILES 定义的个性化权重）。
@@ -343,6 +427,7 @@ def plan_three_routes(
     
     routes_info: dict[str, RouteInfo] = {}
     cost_fields = {}
+    weights = weights or default_weights()
     meta = {
         "cost_mode": cost_mode,
         "real_env_available": False,
@@ -350,6 +435,14 @@ def plan_three_routes(
         "wave_penalty": wave_penalty,
         "use_edl": bool(use_edl),
         "w_edl": float(w_edl if use_edl else 0.0),
+        "weights": dict(weights),
+    }
+    resolved_files = resolve_env_files_for_ym(ym or "")
+    meta["resolved_env_files"] = {
+        "sic": [str(p) for p in resolved_files.sic_files],
+        "wave": [str(p) for p in resolved_files.wave_files],
+        "grid": [str(p) for p in resolved_files.grid_files],
+        "landmask": [str(p) for p in resolved_files.landmask_files],
     }
     w_ais_effective = w_ais if w_ais is not None else ais_weight
     
@@ -366,6 +459,7 @@ def plan_three_routes(
             print(f"[WARN] Failed to load real environment data: {e}, falling back to demo cost")
             meta["fallback_reason"] = f"加载真实环境数据失败: {e}"
             real_env = None
+    meta["data_sources"] = summarize_data_sources(real_env, resolved_files, ais_density, ais_density_da, ais_density_path)
     
     # 遍历 ROUTE_PROFILES，为每个方案构建成本场并规划路线
     for profile in ROUTE_PROFILES:
@@ -374,8 +468,8 @@ def plan_three_routes(
         
         # 根据 profile 计算实际的权重参数
         # 基础权重（来自 UI 的全局参数）
-        base_ice_penalty = 4.0  # 默认基础冰风险权重
-        base_wave_penalty = wave_penalty
+        base_ice_penalty = float(weights.get("w_sic", 4.0))
+        base_wave_penalty = float(weights.get("w_swh", wave_penalty))
         base_w_edl = w_edl if use_edl else 0.0
         
         # 应用 profile 的倍率因子
@@ -680,11 +774,21 @@ def render() -> None:
         if default_scenario_id not in scenario_options:
             default_scenario_id = "manual"
 
+        current_lang = st.session_state.get("lang", "zh")
+
+        def _scenario_label(sid: str) -> str:
+            if sid == "manual":
+                return "手动（自定义）" if current_lang == "zh" else "Manual (custom)"
+            scen = scenarios_map.get(sid)
+            base_en = scen.title if scen else sid
+            zh_label = SCENARIO_LABELS_ZH.get(sid)
+            return zh_label if current_lang == "zh" and zh_label else base_en
+
         selected_scenario_id = st.selectbox(
             "选择预设场景",
             options=scenario_options,
             index=scenario_options.index(default_scenario_id),
-            format_func=lambda sid: "manual（自定义）" if sid == "manual" else f"{sid} - {scenarios_map[sid].title}",
+            format_func=lambda sid: _scenario_label(sid),
         )
         selected_scenario_name = selected_scenario_id
         st.session_state["selected_scenario_id"] = selected_scenario_id
@@ -709,9 +813,114 @@ def render() -> None:
             st.session_state["use_edl_uncertainty_pref"] = scen.use_edl_uncertainty
             st.session_state["ym"] = scen.ym
             st.session_state["grid_mode_pref"] = scen.grid_mode
-            st.caption(f"{scen.description} | ym={scen.ym}")
+            scen_desc = SCENARIO_DESCS_ZH.get(selected_scenario_id, scen.description)
+            st.caption(f"{scen_desc if current_lang == 'zh' else scen.description} | ym={scen.ym}")
         else:
-            st.caption("手动输入起终点和权重参数")
+            st.caption("手动输入起终点和权重参数" if current_lang == "zh" else "Manually input endpoints and weights")
+
+        st.markdown("### 🧮 成本权重 (可调)")
+        weight_state = default_weights()
+        if "weights" in st.session_state:
+            weight_state.update(st.session_state["weights"])
+        # 若场景或旧状态提供了具体值，优先写入默认 dict
+        weight_state["w_ais"] = float(st.session_state.get("w_ais", weight_state["w_ais"]))
+        weight_state["w_corridor"] = float(st.session_state.get("w_ais_corridor", weight_state["w_corridor"]))
+        weight_state["w_congestion"] = float(st.session_state.get("w_ais_congestion", weight_state["w_congestion"]))
+        weight_state["w_swh"] = float(st.session_state.get("wave_penalty", weight_state["w_swh"]))
+
+        col_w1, col_w2 = st.columns(2)
+        weight_state["w_sic"] = col_w1.slider(
+            "海冰权重 (w_sic)",
+            min_value=0.0,
+            max_value=10.0,
+            value=float(weight_state["w_sic"]),
+            step=0.5,
+            help="影响基础冰风险权重；对应成本场 ice_penalty。",
+        )
+        weight_state["w_swh"] = col_w2.slider(
+            "波浪权重 (w_swh)",
+            min_value=0.0,
+            max_value=10.0,
+            value=float(weight_state["w_swh"]),
+            step=0.5,
+            help="真实环境模式下的波浪成本放大系数。",
+        )
+
+        col_w3, col_w4 = st.columns(2)
+        weight_state["w_ais"] = col_w3.slider(
+            "AIS 旧版权重 (w_ais)",
+            min_value=0.0,
+            max_value=10.0,
+            value=float(weight_state["w_ais"]),
+            step=0.1,
+            help="向后兼容的 AIS 拥挤度权重，未设置 corridor 时将映射为 corridor。",
+        )
+        weight_state["w_corridor"] = col_w4.slider(
+            "AIS 主航线偏好 (w_corridor)",
+            min_value=0.0,
+            max_value=10.0,
+            value=float(weight_state["w_corridor"]),
+            step=0.5,
+            help="越大越偏好历史高密度航线。",
+        )
+
+        col_w5, col_w6 = st.columns(2)
+        weight_state["w_congestion"] = col_w5.slider(
+            "AIS 拥挤惩罚 (w_congestion)",
+            min_value=0.0,
+            max_value=10.0,
+            value=float(weight_state["w_congestion"]),
+            step=0.5,
+            help="对极端拥挤区域的二次惩罚。",
+        )
+        weight_state["w_sit"] = col_w6.slider(
+            "冰厚权重 (w_sit，暂未启用)",
+            min_value=0.0,
+            max_value=10.0,
+            value=float(weight_state["w_sit"]),
+            step=0.5,
+            help="冰厚成本占位，当前成本构建尚未启用。",
+            disabled=True,
+        )
+
+        col_w7, col_w8 = st.columns(2)
+        weight_state["w_drift"] = col_w7.slider(
+            "漂移权重 (w_drift，暂未启用)",
+            min_value=0.0,
+            max_value=10.0,
+            value=float(weight_state["w_drift"]),
+            step=0.5,
+            help="冰漂/流速成本占位，当前未在成本中使用。",
+            disabled=True,
+        )
+        weight_state["w_shallow"] = col_w8.slider(
+            "浅滩惩罚 (w_shallow，暂未启用)",
+            min_value=0.0,
+            max_value=10.0,
+            value=float(weight_state["w_shallow"]),
+            step=0.5,
+            help="浅水深度惩罚占位，当前未在成本中使用。",
+            disabled=True,
+        )
+        weight_state["w_polaris"] = st.slider(
+            "Polaris/附加惩罚 (w_polaris，暂未启用)",
+            min_value=0.0,
+            max_value=10.0,
+            value=float(weight_state["w_polaris"]),
+            step=0.5,
+            help="留作后续 Polaris 规则，当前未参与成本计算。",
+            disabled=True,
+        )
+
+        st.session_state["weights"] = weight_state
+        wave_penalty = float(weight_state["w_swh"])
+        w_ais = float(weight_state["w_ais"])
+        w_ais_corridor = float(weight_state["w_corridor"])
+        w_ais_congestion = float(weight_state["w_congestion"])
+        st.session_state["wave_penalty"] = wave_penalty
+        st.session_state["w_ais"] = w_ais
+        st.session_state["w_ais_corridor"] = w_ais_corridor
+        st.session_state["w_ais_congestion"] = w_ais_congestion
 
         # ??????????
         start_lat_default = st.session_state.get("start_lat", 66.0)
@@ -802,56 +1011,8 @@ def render() -> None:
         
         st.subheader("寻路配置")
         allow_diag = st.checkbox("允许对角线移动 (8 邻接)", value=True)
-        
-        st.subheader("风险权重")
-        wave_penalty = st.slider(
-            "波浪权重 (wave_penalty)",
-            min_value=0.0,
-            max_value=10.0,
-            value=float(st.session_state.get("wave_penalty", 2.0)),
-            step=0.5,
-            help="仅在成本模式为真实环境数据时有影响；若缺少 wave 数据则自动退回为 0。",
-        )
-        st.session_state["wave_penalty"] = wave_penalty
-
-        st.subheader("AIS 成本权重")
-        default_corridor = float(st.session_state.get("w_ais_corridor", 2.0))
-        default_congestion = float(st.session_state.get("w_ais_congestion", 1.0))
-        col_corr, col_cong = st.columns(2)
-        with col_corr:
-            w_ais_corridor = st.slider(
-                "AIS 主航线偏好 (w_corridor)",
-                min_value=0.0,
-                max_value=10.0,
-                value=default_corridor,
-                step=0.5,
-                help="Corridor：越接近高密度主航线，成本越低。",
-            )
-        with col_cong:
-            w_ais_congestion = st.slider(
-                "AIS 拥挤惩罚 (w_congestion)",
-                min_value=0.0,
-                max_value=10.0,
-                value=default_congestion,
-                step=0.5,
-                help="Congestion：仅对密度高分位区域（如 P90+）施加惩罚。",
-            )
-        st.session_state["w_ais_corridor"] = w_ais_corridor
-        st.session_state["w_ais_congestion"] = w_ais_congestion
-        st.caption("Corridor：偏好成熟航道 | Congestion：避开极端拥挤")
-
-        with st.expander("旧版 AIS 权重 (w_ais, deprecated)", expanded=False):
-            w_ais = st.slider(
-                "AIS 旧版权重 w_ais",
-                min_value=0.0,
-                max_value=10.0,
-                value=float(st.session_state.get("w_ais", 0.0)),
-                step=0.1,
-                help="向后兼容参数，若新权重均为 0，会自动映射为 corridor。",
-            )
-            st.caption("建议使用上方 corridor/congestion 权重，新项目不再直接使用 w_ais。")
-        st.session_state["w_ais"] = w_ais
         ais_weights_enabled = any(weight > 0 for weight in [w_ais, w_ais_corridor, w_ais_congestion])
+        st.caption("成本权重已在上方配置，如需调整请使用“🧮 成本权重”区域。")
 
         # ====================================================================
         # 任务 C1：网格变化检测 - 自动清空旧 AIS 选择
@@ -1065,18 +1226,28 @@ def render() -> None:
         )
         
         st.subheader("船舶配置")
-        vessel_profiles = get_default_profiles()
-        vessel_keys = list(vessel_profiles.keys())
+        default_profiles = get_default_profiles()
+        catalog = get_profile_catalog()
+        default_keys = [k for k in default_profiles.keys() if k in catalog]
+        other_keys = [k for k in catalog.keys() if k not in default_keys]
+        vessel_keys = default_keys + sorted(other_keys)
         vessel_default = st.session_state.get("vessel_profile", vessel_keys[0] if vessel_keys else None)
         if vessel_default not in vessel_keys:
             vessel_default = vessel_keys[0]
+        label_map = {}
+        for k in vessel_keys:
+            label = f"{catalog[k].name} ({k})"
+            if k in default_keys:
+                label += " ⭐默认"
+            label_map[k] = label
         selected_vessel_key = st.selectbox(
             "选择船型",
             options=vessel_keys,
             index=vessel_keys.index(vessel_default),
-            format_func=lambda k: f"{vessel_profiles[k].name} ({k})",
+            format_func=lambda k: label_map.get(k, k),
         )
-        selected_vessel = vessel_profiles[selected_vessel_key]
+        selected_vessel = catalog[selected_vessel_key]
+        st.session_state["vessel_profile"] = selected_vessel_key
         
         # ====================================================================
         # 任务 C：Health Check - 添加 AIS density grid_signature 验证
@@ -1417,6 +1588,8 @@ def render() -> None:
             w_ais_corridor=w_ais_corridor,
             w_ais_congestion=w_ais_congestion,
             w_ais=w_ais,
+            weights=weight_state,
+            ym=st.session_state.get("ym"),
         )
         
         # 完成第 5、6 个节点
@@ -1454,6 +1627,26 @@ def render() -> None:
         st.warning("⚠️ 真实环境不可用，已回退到 demo 网格")
     else:
         st.info("当前使用演示网格")
+
+    st.subheader("数据源可用性（本次规划）")
+    source_labels = {
+        "sic": "SIC",
+        "swh": "SWH",
+        "sit": "SIT",
+        "drift": "Drift",
+        "ais": "AIS",
+        "static_assets": "静态资产",
+    }
+    data_sources = cost_meta.get("data_sources", {})
+    for key, label in source_labels.items():
+        info = data_sources.get(key, {}) if isinstance(data_sources, dict) else {}
+        found = info.get("found", False)
+        status = "✅ found" if found else "⚠ missing"
+        path = info.get("path") or "N/A"
+        shape = info.get("shape")
+        shape_text = f"{shape}" if shape else "N/A"
+        note = info.get("note")
+        st.caption(f"{label}: {status} | path={path} | shape={shape_text}" + (f" | note={note}" if note else ""))
 
 
     # 检查是否有可达的路线
@@ -3218,6 +3411,8 @@ def render() -> None:
                 "use_real_data": cost_mode == "real_sic_if_available",
                 "cost_mode": cost_mode,
                 "grid_source": grid_source_label,
+                "weights": cost_meta.get("weights"),
+                "data_sources": cost_meta.get("data_sources"),
             }
             export_data.append(export_record)
     

@@ -15,5 +15,6 @@ def test_profile_catalog_larger_than_defaults():
     assert len(defaults) >= 3
     # 全量目录应明显多于默认配置
     assert len(catalog) > len(defaults)
+    assert set(defaults.keys()).issubset(set(catalog.keys()))
 
 

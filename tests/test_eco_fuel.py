@@ -27,3 +27,4 @@ def test_eco_cost_norm_constant_returns_zero():
 
 
 
+
