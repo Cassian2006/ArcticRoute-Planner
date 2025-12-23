@@ -1,4 +1,9 @@
-"""Streamlit entrypoint for the ArcticRoute UI shell."""
+"""Streamlit entrypoint for the ArcticRoute UI shell.
+
+启动方式（唯一入口）：
+    streamlit run run_ui.py
+不要直接运行 arcticroute/ui/planner_minimal.py 以避免导航/布局重复。
+"""
 
 from __future__ import annotations
 
