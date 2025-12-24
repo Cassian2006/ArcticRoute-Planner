@@ -1562,9 +1562,14 @@ def build_cost_from_real_env(
     # ========================================================================
     # Step 3: AIS 拥挤/走廊处理（拆分为 corridor + congestion）
     # ========================================================================
+    # 兼容旧测试预期：当调用方显式传入 ais_density=None 时，应视为“禁用 AIS”，
+    # 即使 legacy_w_ais > 0 也不应回退去磁盘加载默认 density 文件。
+    # （否则会出现 test_no_crash_when_no_ais 里 ais_density=None 但仍应用 AIS 的情况）
     need_ais = any(weight > 0 for weight in (w_corridor, w_congestion, legacy_w_ais))
+    allow_fallback_load = ais_density is not None or ais_density_da is not None
+
     ais_norm = None
-    if need_ais:
+    if need_ais and allow_fallback_load:
         ais_norm = _load_normalized_ais_density(
             grid=grid,
             density_source=density_source,
