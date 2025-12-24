@@ -1190,6 +1190,7 @@ def build_cost_from_real_env(
         ais_weight=ais_weight,
     )
     density_source = ais_density if ais_density is not None else ais_density_da
+    has_density_input = density_source is not None or ais_density_path is not None
     effective_grid = env.grid if env and env.grid is not None else grid
     effective_land_mask = env.land_mask if env and env.land_mask is not None else land_mask
 
@@ -1562,7 +1563,7 @@ def build_cost_from_real_env(
     # ========================================================================
     # Step 3: AIS 拥挤/走廊处理（拆分为 corridor + congestion）
     # ========================================================================
-    need_ais = any(weight > 0 for weight in (w_corridor, w_congestion, legacy_w_ais))
+    need_ais = has_density_input and any(weight > 0 for weight in (w_corridor, w_congestion, legacy_w_ais))
     ais_norm = None
     if need_ais:
         ais_norm = _load_normalized_ais_density(
