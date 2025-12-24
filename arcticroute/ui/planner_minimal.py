@@ -13,6 +13,7 @@ Phase 3：三方案 demo Planner，支持 efficient / edl_safe / edl_robust 三�
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict
 from pathlib import Path
@@ -36,10 +37,10 @@ from arcticroute.core.cost import (
     compute_grid_signature,
 )
 from arcticroute.core.env_real import load_real_env_for_grid
-from arcticroute.core.astar import plan_route_latlon
 from arcticroute.core.analysis import compute_route_cost_breakdown, compute_route_profile
 from arcticroute.core.eco.vessel_profiles import get_default_profiles, VesselProfile
 from arcticroute.core.eco.eco_model import estimate_route_eco
+from arcticroute.core.planners.selector import select_planner_backend
 
 # 导入共享配置
 from arcticroute.config import EDL_MODES, list_edl_modes
@@ -311,6 +312,11 @@ def plan_three_routes(
     w_ais_corridor: float = 0.0,
     w_ais_congestion: float = 0.0,
     w_ais: float | None = None,
+    weights: dict[str, float] | None = None,
+    ym: str | None = None,
+    discovery_summary: dict | None = None,
+    planner_backend=None,
+    planner_meta: dict | None = None,
 ) -> tuple[dict[str, RouteInfo], dict, dict, dict, str]:
     """
     规划三条路线：efficient / edl_safe / edl_robust（使用 ROUTE_PROFILES 定义的个性化权重）。
@@ -350,7 +356,17 @@ def plan_three_routes(
         "wave_penalty": wave_penalty,
         "use_edl": bool(use_edl),
         "w_edl": float(w_edl if use_edl else 0.0),
+        "weights": dict(weights) if weights else {},
+        "planner_meta": planner_meta or {},
+        "planner_used": (planner_meta or {}).get("planner_used"),
+        "planner_fallback_reason": (planner_meta or {}).get("fallback_reason"),
+        "planner_mode": (planner_meta or {}).get("planner_mode"),
     }
+    if planner_meta and planner_meta.get("fallback_reason"):
+        meta["planner_fallback_reason"] = planner_meta.get("fallback_reason")
+    w_ais_effective = w_ais if w_ais is not None else ais_weight
+    if planner_backend is None:
+        planner_backend, planner_meta = select_planner_backend("astar")
     w_ais_effective = w_ais if w_ais is not None else ais_weight
     
     # 根据 cost_mode 决定是否加载真实环境数据
@@ -470,14 +486,18 @@ def plan_three_routes(
         start_lat_s, start_lon_s = _snap_to_ocean(start_lat, start_lon)
         end_lat_s, end_lon_s = _snap_to_ocean(end_lat, end_lon)
 
-        # 规划路线
-        path = plan_route_latlon(
+        # 规划路线（由后端决定 A*/PolarRoute，当前无 PolarRoute 实现则回退 A*）
+        if planner_backend is None:
+            planner_backend, planner_meta = select_planner_backend("astar")
+        path = planner_backend.plan(
+            grid,
+            land_mask,
             cost_field,
             start_lat_s,
             start_lon_s,
             end_lat_s,
             end_lon_s,
-            neighbor8=allow_diag,
+            allow_diag=allow_diag,
         )
         
         # 构造 RouteInfo
@@ -802,6 +822,50 @@ def render() -> None:
         
         st.subheader("寻路配置")
         allow_diag = st.checkbox("允许对角线移动 (8 邻接)", value=True)
+
+        st.subheader("规划引擎")
+        planner_options = {
+            "auto": "Auto（推荐）",
+            "astar": "A*",
+            "polarroute_pipeline": "PolarRoute（pipeline）",
+            "polarroute_external": "PolarRoute（external）",
+        }
+        planner_mode = st.selectbox(
+            "规划引擎选择",
+            options=list(planner_options.keys()),
+            format_func=lambda k: planner_options.get(k, k),
+            index=0,
+            key="planner_engine_mode",
+        )
+        pipeline_dir = None
+        external_vessel_mesh = None
+        external_route_config = None
+        if planner_mode == "polarroute_pipeline":
+            pipeline_dir = st.text_input("pipeline_dir 路径", value=st.session_state.get("pipeline_dir", ""))
+            st.session_state["pipeline_dir"] = pipeline_dir
+        elif planner_mode == "polarroute_external":
+            external_vessel_mesh = st.text_input(
+                "vessel_mesh.json 路径", value=st.session_state.get("external_vessel_mesh", "")
+            )
+            external_route_config = st.text_input(
+                "route_config.json 路径", value=st.session_state.get("external_route_config", "")
+            )
+            st.session_state["external_vessel_mesh"] = external_vessel_mesh
+            st.session_state["external_route_config"] = external_route_config
+
+        planner_backend, planner_meta = select_planner_backend(
+            planner_mode,
+            pipeline_dir=pipeline_dir,
+            external_vessel_mesh=external_vessel_mesh,
+            external_route_config=external_route_config,
+        )
+        st.session_state["planner_meta"] = planner_meta
+        st.session_state["planner_backend"] = planner_backend
+        planner_used = planner_meta.get("planner_used") or "astar"
+        fallback_reason = planner_meta.get("fallback_reason")
+        st.caption(f"将使用：{planner_used}；回退原因：{fallback_reason or '无'}")
+        if fallback_reason:
+            st.warning(f"规划后端已回退 A*：{fallback_reason}", icon="⚠️")
         
         st.subheader("风险权重")
         wave_penalty = st.slider(
@@ -1130,6 +1194,8 @@ def render() -> None:
     if "pipeline_flow_start_time" not in st.session_state:
         st.session_state.pipeline_flow_start_time = None
     
+    engine_label = "PolarRoute 规划" if str(planner_used).startswith("polarroute") else "A* 规划"
+
     # 规划按钮被点击时，初始化流动管线
     if do_plan:
         st.session_state.pipeline_flow_expanded = True
@@ -1141,7 +1207,7 @@ def render() -> None:
             PipeNode(key="env_layers", label="③ 加载环境层", status="pending"),
             PipeNode(key="ais_density", label="④ 加载 AIS 密度", status="pending"),
             PipeNode(key="cost_field", label="⑤ 构建成本场", status="pending"),
-            PipeNode(key="astar", label="⑥ A* 规划", status="pending"),
+            PipeNode(key="astar", label=f"⑥ {engine_label}", status="pending"),
             PipeNode(key="analysis", label="⑦ 分析与诊断", status="pending"),
             PipeNode(key="render", label="⑧ 渲染与导出", status="pending"),
         ]
@@ -1155,7 +1221,7 @@ def render() -> None:
         ("ais", "加载 AIS"),
         ("cost_build", "构建成本场"),
         ("snap", "起止点吸附"),
-        ("astar", "A* 路由"),
+        ("astar", engine_label),
         ("analysis", "成本分析"),
         ("render", "数据准备"),
     ]
@@ -1417,13 +1483,19 @@ def render() -> None:
             w_ais_corridor=w_ais_corridor,
             w_ais_congestion=w_ais_congestion,
             w_ais=w_ais,
+            planner_backend=planner_backend,
+            planner_meta=planner_meta,
         )
+        planner_used_runtime = cost_meta.get("planner_used") or (planner_meta.get("planner_used") if planner_meta else "astar")
+        planner_fallback_runtime = cost_meta.get("planner_fallback_reason") or (planner_meta.get("fallback_reason") if planner_meta else None)
         
         # 完成第 5、6 个节点
         _update_pipeline_node(4, "done", "3 种成本场", seconds=0.6)
         
         # 更新第 6 个节点：A* 规划
-        _update_pipeline_node(5, "running", "规划路线...")
+        _update_pipeline_node(5, "running", f"规划路线（{planner_used_runtime}）...")
+        if planner_fallback_runtime:
+            st.warning(f"规划已回退 A*：{planner_fallback_runtime}", icon="⚠️")
         
         # 完成 cost_build/snap/astar stages
         pipeline.done('cost_build')
@@ -3218,6 +3290,9 @@ def render() -> None:
                 "use_real_data": cost_mode == "real_sic_if_available",
                 "cost_mode": cost_mode,
                 "grid_source": grid_source_label,
+                "planner_used": planner_meta.get("planner_used") if planner_meta else None,
+                "planner_mode": planner_meta.get("planner_mode") if planner_meta else None,
+                "planner_fallback_reason": planner_meta.get("fallback_reason") if planner_meta else None,
             }
             export_data.append(export_record)
     
